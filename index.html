@@ -238,8 +238,9 @@ async function fetchAll(){
 }
 async function load(){
   S.data = await fetchAll();
-  // 도토리 방앗간 허용 목록(toto_users)에 있는 계정만 전환 버튼을 보여줘요
-  try { const { data } = await sb.rpc('is_toto'); S.toto = data === true; } catch(e){ S.toto = false; }
+  // 도토리 방앗간 전환 버튼은 이 계정으로 로그인했을 때만 보여줘요
+  try { const { data:{ session } } = await sb.auth.getSession();
+    S.toto = (session?.user?.email || '').toLowerCase() === 'tksid1@gmail.com'; } catch(e){ S.toto = false; }
   if (S.data._migrated) { delete S.data._migrated; await sb.from('settings').upsert({id:1, data:set(), updated_at:new Date().toISOString()}); }
   stamp(); render();
   // 예전에 메모로만 남긴 "(N개월 할부)"를 할부로 바꾸기 (한 번만)
