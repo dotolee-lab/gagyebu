@@ -791,7 +791,9 @@ function viewSet(){
         <span class="muted">로</span><button class="btn pri" id="r-save">규칙 저장</button></div></div>
     <div class="panel"><h2>가져오기·백업</h2>
       <div class="row" style="margin-bottom:10px"><button class="btn" id="exp-json">전체 백업 (JSON)</button><button class="btn" id="exp-csv">전체 내역 CSV</button>
-        <label class="btn">백업 복원<input type="file" id="imp-json" accept=".json" hidden></label></div>
+        <label class="btn">백업 복원<input type="file" id="imp-json" accept=".json" hidden></label>
+        <label class="btn">내역 파일 추가 (기존 유지)<input type="file" id="imp-merge" accept=".json" hidden></label></div>
+      <div id="merge-prev"></div>
       <p class="muted" style="margin:0 0 6px">카드사 이용내역 가져오기 — 카드사에서 받은 <b>엑셀(xls·xlsx) 또는 CSV</b> 파일을 그대로 올리세요. <b>이용일자·가맹점·이용금액</b> 열을 자동으로 찾아요. (구분·세부내용·내용 열이 있으면 사람·메모·카테고리로 들어가요)</p>
       <div class="row"><select id="imp-pm">${st.payMethods.map(p=>`<option>${esc(p.name)}</option>`).join('')}</select>
         <label class="btn pri">카드 내역 파일 선택<input type="file" id="imp-csv" accept=".xls,.xlsx,.csv,text/csv" hidden></label></div>
@@ -827,6 +829,8 @@ function viewSet(){
   $('#imp-json').onchange = async ev => { const f = ev.target.files[0]; if (!f) return;
     try { const d = JSON.parse(await f.text()); if (!confirm(`백업으로 전체를 덮어쓸까요? (내역 ${d.entries?.length||0}건)`)) return;
       await restoreAll(d); toast('복원했어요'); } catch(e){ toast('복원 실패: ' + e.message); } };
+  $('#imp-merge').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; ev.target.value = '';
+    try { mergePreview(JSON.parse(await f.text())); } catch(e){ toast('파일을 읽지 못했어요: ' + e.message); } };
   $('#imp-csv').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; try { importCardRows(await readRows(f), $('#imp-pm').value); } catch(e){ toast('파일을 읽지 못했어요: ' + e.message); } ev.target.value=''; };
 }
 
@@ -889,6 +893,43 @@ function classify(detail, pm){
   if (prev) return {member:prev.member, category:prev.category, how:'learn'};
   const d = set().importDefault || {member:'s', category:'생활비'};
   return {member:d.member, category:d.category, how:'base'};
+}
+// 내역 파일 추가: 기존 내역은 그대로 두고 새 내역만 더하기 (예전 엑셀 옮기기용)
+function mergePreview(d){
+  if (!Array.isArray(d.entries)) return toast('내역 파일 형식이 아니에요');
+  const st = set(), ex = st.categories.expense;
+  const newCats = [], newPMs = [];
+  (d.categories || []).forEach(c => { if (!ex.some(x => x.name === c.name) && d.entries.some(e => e.category === c.name)) newCats.push(c); });
+  // '@개인:h' 같은 표시는 그 사람의 개인(정산) 카테고리로 연결
+  const personalCat = id => { const hit = ex.concat(newCats).find(c => c.group === PERSONAL_GROUP && personOfCat(c.name) === id);
+    if (hit) return hit.name; const c = {name:`${memberName(id)} 개인`, group:PERSONAL_GROUP}; newCats.push(c); return c.name; };
+  const has = new Set(S.data.entries.map(e => e.id));
+  const sig = e => `${e.date}|${+e.amount}|${e.detail}`; const sigs = new Set(S.data.entries.map(sig));
+  const items = [], dup = [];
+  for (const raw of d.entries) {
+    const e = {...raw}; const m = /^@개인:(\w+)$/.exec(e.category || ''); if (m) e.category = personalCat(m[1]);
+    if (!e.id || has.has(e.id) || sigs.has(sig(e))) { dup.push(e); continue; }
+    if (e.type === 'expense' && !ex.concat(newCats).some(c => c.name === e.category)) newCats.push({name:e.category, group:'변동비'});
+    items.push(e);
+  }
+  (d.payMethods || []).forEach(p => { if (!st.payMethods.some(x => x.name === p.name) && items.some(e => e.payMethod === p.name)) newPMs.push(p); });
+  if (!items.length) { $('#merge-prev').innerHTML = `<p class="muted">새로 추가할 내역이 없어요 (이미 들어 있는 ${dup.length}건은 건너뜀)</p>`; return; }
+  const byMonth = {}; items.forEach(e => { const k = cycleOf(e); byMonth[k] = (byMonth[k] || 0) + 1; });
+  const byCat = {}; items.forEach(e => byCat[e.category] = (byCat[e.category] || 0) + +e.amount);
+  $('#merge-prev').innerHTML = `<div class="panel" style="margin-top:12px;border-color:var(--accent)">
+    <h2>${esc(d.source || '내역 파일')} <small>${items.length}건 추가 · 이미 있는 ${dup.length}건 건너뜀</small></h2>
+    <div class="muted" style="margin-bottom:6px">월별: ${Object.keys(byMonth).sort().map(k => `${+k.slice(5)}월 ${byMonth[k]}건`).join(' · ')}</div>
+    <div class="chips" style="margin-bottom:8px">${Object.entries(byCat).sort((a,b) => b[1]-a[1]).map(([c,v]) => `<span class="chip" style="padding-right:10px">${esc(c)} <b class="num">${won(v)}</b></span>`).join('')}</div>
+    ${newCats.length || newPMs.length ? `<div class="muted" style="margin-bottom:8px">함께 추가: ${newCats.map(c => '카테고리 ' + esc(c.name)).concat(newPMs.map(p => '결제수단 ' + esc(p.name))).join(', ')}</div>` : ''}
+    <button class="btn pri" id="merge-go">${items.length}건 추가하기</button> <button class="btn ghost" id="merge-x">취소</button></div>`;
+  $('#merge-x').onclick = () => $('#merge-prev').innerHTML = '';
+  $('#merge-go').onclick = async () => {
+    $('#merge-go').disabled = true; $('#merge-go').textContent = '추가하는 중…';
+    if (newCats.length || newPMs.length) { st.categories.expense.push(...newCats); st.payMethods.push(...newPMs);
+      try { check(await sb.from('settings').upsert({id:1, data:st, updated_at:new Date().toISOString()})); S.selfWrite = Date.now(); }
+      catch(e){ return toast('설정 저장 실패: ' + e.message); } }
+    await ops(items.map(item => ({op:'upsert', col:'entries', item})), `${items.length}건을 추가했어요`);
+  };
 }
 function importCardRows(rows, pm){
   const hi = findHeader(rows);
