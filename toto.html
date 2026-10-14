@@ -400,10 +400,42 @@ function ko(name, league){
 }
 
 // ===== 경기 데이터 (Edge Function 'sports') =====
+// NBA는 ESPN이 서버 요청을 막아서 브라우저에서 직접 불러와요 (실패하면 서버로)
+const espnScore = v => v == null ? null : typeof v === 'object' ? (v.value ?? (v.displayValue != null ? +v.displayValue : null)) : (v === '' ? null : +v);
+function espnGames(j, league){
+  return (j.events || []).map(e => {
+    const c = e.competitions?.[0] || {}, st = e.status?.type || c.status?.type || {};
+    const side = h => (c.competitors || []).find(x => x.homeAway === h) || {}, H = side('home'), A = side('away');
+    const status = /POSTPONED|CANCELED|CANCELLED|SUSPENDED/.test(st.name || '') ? 'postponed' : st.completed ? 'final' : st.state === 'in' ? 'live' : 'scheduled';
+    return {id:String(e.id), league, start:e.date, home:{id:String(H.team?.id), name:H.team?.displayName || '?'}, away:{id:String(A.team?.id), name:A.team?.displayName || '?'},
+      hs: status === 'scheduled' ? null : espnScore(H.score), as: status === 'scheduled' ? null : espnScore(A.score), status, statusText: st.description || ''};
+  });
+}
+function espnStandings(j){
+  const stat = (e, n) => (e.stats || []).find(x => x.name === n), CONF = {'Eastern Conference':'동부', 'Western Conference':'서부'};
+  return {groups: (j.children || []).map(c => ({name: CONF[c.name] || c.name, rows: (c.standings?.entries || []).map(e => ({team:{id:String(e.team?.id), name:e.team?.displayName},
+      w: stat(e,'wins')?.value ?? 0, l: stat(e,'losses')?.value ?? 0, pct: stat(e,'winPercent')?.displayValue ?? null, gb: stat(e,'gamesBehind')?.displayValue ?? null, seed: stat(e,'playoffSeed')?.value}))
+    .sort((a,b) => (a.seed ?? 99) - (b.seed ?? 99) || b.w - a.w).map((r,i) => ({rank:i+1, team:r.team, p:r.w+r.l, w:r.w, d:null, l:r.l, pts:null, pct:r.pct, gb:r.gb}))}))};
+}
+async function espnDirect(body){
+  const get = async path => { const r = await fetch('https://site.api.espn.com' + path); if (!r.ok) throw new Error('ESPN ' + r.status); return r.json(); };
+  const ymd = d => d.replace(/-/g,'');
+  if (body.kind === 'games') {
+    const gs = [...espnGames(await get(`/apis/site/v2/sports/basketball/nba/scoreboard?dates=${ymd(addDays(body.date,-1))}`), 'NBA'),
+                ...espnGames(await get(`/apis/site/v2/sports/basketball/nba/scoreboard?dates=${ymd(body.date)}`), 'NBA')];
+    const seen = new Set();
+    return gs.filter(g => kstDay(g.start) === body.date && !seen.has(g.id) && seen.add(g.id)).sort((a,b) => a.start.localeCompare(b.start));
+  }
+  if (body.kind === 'standings') return espnStandings(await get('/apis/v2/sports/basketball/nba/standings'));
+  const reg = espnGames(await get(`/apis/site/v2/sports/basketball/nba/teams/${body.team}/schedule?seasontype=2`), 'NBA');
+  return reg.some(g => g.status === 'final') ? reg
+    : [...espnGames(await get(`/apis/site/v2/sports/basketball/nba/teams/${body.team}/schedule?seasontype=2&season=${today().slice(0,4)}`), 'NBA'), ...reg];
+}
 async function sports(body){
   const k = JSON.stringify(body);
   if (S.sc.has(k)) return S.sc.get(k);
   const p = (async () => {
+    if (body.league === 'NBA') { try { return await espnDirect(body); } catch(e){ /* 서버로 재시도 */ } }
     const r = await sb.functions.invoke('sports', {body});
     if (r.error) { let m = r.error.message; try { const j = await r.error.context.json(); m = j.error || m; } catch(e){} throw new Error(m); }
     if (r.data?.error) throw new Error(r.data.error);
