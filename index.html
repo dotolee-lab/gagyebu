@@ -138,11 +138,16 @@ function cycleRange(month){
 }
 // 공동생활비 카드로 쓴 지출은 '공동생활비' 이체에 이미 포함되어 있으므로 총지출 합계에서 제외
 // 공동생활비에서 나간 지출: 공동생활비 카드로 결제했거나, '공용' + 공동생활비 카테고리(기본: 생활비)
-const fromSharedFund = e => e.type === 'expense' && e.category !== '공동생활비' &&
+// 개인(정산) 그룹 카테고리: 카드와 상관없이 그 사람이 나중에 채워 넣을 돈 → 정산 대기, 우리집 총지출에서 제외
+const PERSONAL_GROUP = '개인(정산)';
+const isPersonal = e => e.type === 'expense' && groupOf('expense', e.category) === PERSONAL_GROUP;
+const fromSharedFund = e => e.type === 'expense' && e.category !== '공동생활비' && !isPersonal(e) &&
   (isSharedPM(e.payMethod) || (e.member === 's' && (set().sharedFundCats || []).includes(e.category)));
 // 공동생활비로 넣은 돈에서 나간 지출은 총지출에 두 번 더하지 않음
-const countsInTotal = e => !fromSharedFund(e);
-const needsSettle = e => e.type === 'expense' && isSharedPM(e.payMethod) && e.member !== 's' && !e.settled;
+const countsInTotal = e => !fromSharedFund(e) && !isPersonal(e);
+const needsSettle = e => e.type === 'expense' && !e.settled && (isPersonal(e) || (isSharedPM(e.payMethod) && e.member !== 's'));
+// 카테고리 이름에 구성원 이름이 들어 있으면 그 사람 몫 (예: '동현 개인')
+const personOfCat = name => (set().members.find(m => name.includes(m.name)) || {}).id;
 
 // ---------- 저장소 (Supabase) ----------
 const DEFAULT_SETTINGS = {
@@ -184,6 +189,10 @@ function normalize(d){
     const ren = {'고정비1':'고정비(용돈·생활비)', '고정비2':'고정비(주거·보험·통신)'};
     d.settings.categories.expense.forEach(c => { if (ren[c.group]) c.group = ren[c.group]; });
     mig.push('v4'); d._migrated = true; }
+  if (!mig.includes('v5')) {   // 개인(정산) 카테고리 추가
+    const ex = d.settings.categories.expense;
+    d.settings.members.forEach(m => { const n = `${m.name} 개인`; if (!ex.some(c => c.name === n)) ex.push({name:n, group:'개인(정산)'}); });
+    mig.push('v5'); d._migrated = true; }
   if (!mig.includes('v3')) { if (!Array.isArray(d.settings.sharedFundCats)) d.settings.sharedFundCats = ['생활비']; mig.push('v3'); d._migrated = true; }
   if (!d.settings.importDefault) d.settings.importDefault = {member:'s', category:'생활비'};
   return d;
@@ -255,9 +264,10 @@ document.addEventListener('visibilitychange', () => pull());
 // ---------- 집계 ----------
 function entriesOf(month){ return S.data.entries.filter(e => cycleOf(e) === month); }
 function sums(list){
-  const r = {income:0, expense:0, saving:0, sharedUse:0};
+  const r = {income:0, expense:0, saving:0, sharedUse:0, personal:0};
   for (const e of list){
     if (countsInTotal(e)) r[e.type] += +e.amount || 0;
+    else if (isPersonal(e)) r.personal += +e.amount || 0;
     else r.sharedUse += +e.amount || 0;
   }
   return r;
@@ -382,6 +392,7 @@ function bindEntryForm(e){
   const upd = () => { const tmp = {type:e.type, date:f.date.value, month:f.month.value};
     $('#cyc').textContent = tmp.date ? `→ ${monthLabel(cycleOf(tmp))} 가계부에 들어가요` : ''; };
   f.date.oninput = upd; f.month.oninput = upd; upd();
+  f.category.onchange = () => { const who = groupOf(e.type, f.category.value) === PERSONAL_GROUP && personOfCat(f.category.value); if (who) f.member.value = who; };
   f.amount.oninput = () => { const n = f.amount.value.replace(/[^\d]/g,''); f.amount.value = n ? (+n).toLocaleString('ko-KR') : ''; };
   // 상세를 고르면 예전에 쓴 카테고리·결제수단 자동 채움
   f.detail.onchange = () => { const last = [...S.data.entries].reverse().find(x => x.type===e.type && x.detail===f.detail.value);
@@ -412,7 +423,7 @@ function viewList(){
   let list = tabSum(T);
   // 지출 탭의 그룹 칩: 고정비1 / 고정비2 / 변동비 … / 공동생활비 사용
   const expGroups = [...new Set(cats('expense').map(c => c.group))];
-  if (T === 'expense' && F.grp && F.grp !== 'all') list = F.grp === '__shared' ? list.filter(e => !countsInTotal(e)) : list.filter(e => groupOf('expense', e.category) === F.grp && countsInTotal(e));
+  if (T === 'expense' && F.grp && F.grp !== 'all') list = F.grp === '__shared' ? list.filter(fromSharedFund) : list.filter(e => groupOf('expense', e.category) === F.grp && !fromSharedFund(e));
   if (F.member!=='all') list = list.filter(e => e.member===F.member);
   if (F.cat!=='all') list = list.filter(e => e.category===F.cat);
   if (F.q) { const q = F.q.toLowerCase(); list = list.filter(e => [e.detail,e.memo,e.category,e.payMethod].join(' ').toLowerCase().includes(q)); }
@@ -424,8 +435,8 @@ function viewList(){
   const tabTotal = t => { const l = tabSum(t); return t === 'expense' ? sumOf(l.filter(countsInTotal)) : sumOf(l); };
   const exp = tabSum('expense');
   const grpChips = T !== 'expense' ? '' : `<div class="chips" style="margin-bottom:10px">
-      ${[['all','전체', sumOf(exp.filter(countsInTotal))], ...expGroups.map(g => [g, g, sumOf(exp.filter(e => countsInTotal(e) && groupOf('expense', e.category) === g))]),
-         ['__shared','공동생활비 사용', sumOf(exp.filter(e => !countsInTotal(e)))]]
+      ${[['all','전체', sumOf(exp.filter(countsInTotal))], ...expGroups.map(g => [g, g, sumOf(exp.filter(e => !fromSharedFund(e) && groupOf('expense', e.category) === g))]),
+         ['__shared','공동생활비 사용', sumOf(exp.filter(fromSharedFund))]]
         .map(([k,l,v]) => `<button class="chip" data-g="${esc(k)}" style="cursor:pointer;padding:4px 12px;${(F.grp||'all')===k?'background:var(--ink);color:var(--bg);border-color:var(--ink)':''}">${esc(l)} <b class="num">${won(v)}</b></button>`).join('')}
     </div>`;
   $('#main').innerHTML = `
@@ -441,7 +452,7 @@ function viewList(){
       <select id="fc"><option value="all">모든 카테고리</option>${cats(T).map(c=>`<option ${F.cat===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
       <input id="fq" placeholder="검색 (가맹점, 메모)" value="${esc(F.q)}" style="flex:1;min-width:140px">
     </div>
-    <div class="muted" style="margin-bottom:8px">${list.length}건 · 합계 ${won(sumOf(list.filter(countsInTotal)))}원${list.some(e => !countsInTotal(e)) ? ` (공동생활비에서 쓴 ${won(sumOf(list.filter(e => !countsInTotal(e))))}원은 따로)` : ''}</div>
+    <div class="muted" style="margin-bottom:8px">${list.length}건 · 합계 ${won(sumOf(list.filter(countsInTotal)))}원${list.some(fromSharedFund) ? ` (공동생활비에서 쓴 ${won(sumOf(list.filter(fromSharedFund)))}원은 따로)` : ''}${list.some(isPersonal) ? ` (개인 정산 ${won(sumOf(list.filter(isPersonal)))}원은 따로)` : ''}</div>
     <div class="tbl"><table>
       <tr><th>날짜</th><th>카테고리</th><th>상세</th><th>${whoLabel}</th><th>${pmLabel}</th><th class="num">금액</th><th>메모</th><th></th></tr>
       ${list.map(e => `<tr class="m-${e.member}">
@@ -449,7 +460,7 @@ function viewList(){
         <td>${esc(e.category)}${T==='expense'?` <span class="muted" style="font-size:11px">${esc(groupOf('expense', e.category))}</span>`:''}</td><td>${esc(e.detail)}</td>
         <td class="mem"><span>${esc(memberName(e.member))}</span></td>
         <td>${esc(e.payMethod)}${needsSettle(e)?' <span class="tag warn">정산 전</span>':''}</td>
-        <td class="num t-${e.type}">${countsInTotal(e)?'':'<span class="muted" title="공동생활비에서 나간 돈 — 총지출 합계엔 미포함">(공동) </span>'}${won(e.amount)}</td>
+        <td class="num t-${e.type}">${fromSharedFund(e)?'<span class="muted" title="공동생활비에서 나간 돈 — 총지출 합계엔 미포함">(공동) </span>':isPersonal(e)?'<span class="muted" title="개인이 채워 넣을 돈 — 총지출 합계엔 미포함">(개인) </span>':''}${won(e.amount)}</td>
         <td class="muted">${esc(e.memo)}</td>
         <td style="white-space:nowrap"><button class="btn sm ghost" data-e="${e.id}">수정</button><button class="btn sm ghost danger" data-d="${e.id}">삭제</button></td></tr>`).join('')
         || `<tr><td colspan="8" class="empty">${TYPES[T]} 내역이 없어요</td></tr>`}
@@ -483,7 +494,7 @@ function viewShared(){
       <div class="kpi"><div class="l">공동생활비로 쓴 돈</div><div class="v t-expense">${won(used)}</div><div class="s">${list.length}건</div></div>
       <div class="kpi"><div class="l">남은 돈</div><div class="v" style="${sharedIn-used<0?'color:var(--danger)':''}">${won(sharedIn-used)}</div><div class="s">${sharedIn?Math.round(used/sharedIn*100)+'% 사용':''}</div></div>
     </div>
-    <div class="panel"><h2>정산 대기 <small>공동카드로 결제했지만 개인 몫인 내역</small></h2>
+    <div class="panel"><h2>정산 대기 <small>개인(정산) 카테고리 내역 · 공동생활비 카드로 결제한 개인 몫 — 각자 카드출금통장에 넣을 돈</small></h2>
       ${pending.length ? `<div class="row" style="margin-bottom:10px">${Object.entries(pendBy).map(([m,v]) => `<span class="tag ${m}">${esc(memberName(m))} ${won(v)}원</span>`).join('')}</div>
       <table>${pending.map(e => `<tr><td class="num" style="text-align:left">${e.date}</td><td><span class="tag ${e.member}">${esc(memberName(e.member))}</span></td>
         <td>${esc(e.detail)}</td><td class="num">${won(e.amount)}</td><td><button class="btn sm" data-s="${e.id}">정산 완료</button></td></tr>`).join('')}</table>
@@ -500,7 +511,9 @@ function viewShared(){
       </table></div></div>`;
   bindMonth();
   const byId = id => S.data.entries.find(x => x.id === id);
-  document.querySelectorAll('[data-xc]').forEach(s => s.onchange = () => ops([{op:'upsert', col:'entries', item:{...byId(s.dataset.xc), category:s.value}}], '카테고리를 바꿨어요'));
+  document.querySelectorAll('[data-xc]').forEach(s => s.onchange = () => { const e = byId(s.dataset.xc);
+    const who = groupOf('expense', s.value) === PERSONAL_GROUP && personOfCat(s.value);
+    ops([{op:'upsert', col:'entries', item:{...e, category:s.value, member: who || e.member, settled:false}}], who ? '정산 대기로 옮겼어요' : '카테고리를 바꿨어요'); });
   document.querySelectorAll('[data-xm]').forEach(s => s.onchange = () => ops([{op:'upsert', col:'entries', item:{...byId(s.dataset.xm), member:s.value}}], '사람을 바꿨어요'));
   document.querySelectorAll('[data-xe]').forEach(b => b.onclick = () => { S.returnTo = 'shared'; S.view = 'list'; S.edit = {...byId(b.dataset.xe)}; render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-xd]').forEach(b => b.onclick = () => { const e = byId(b.dataset.xd);
@@ -675,7 +688,7 @@ function viewYear(){
   const inc = line('수입 합계', m => sumWhere(m, e => e.type==='income'), 'sub');
   // 지출: 그룹 > 카테고리
   grp('지출');
-  const expGroups = [...new Set(cats('expense').map(c => c.group))];
+  const expGroups = [...new Set(cats('expense').map(c => c.group))].filter(g => g !== PERSONAL_GROUP);
   expGroups.forEach(g => {
     cats('expense').filter(c => c.group===g).forEach(c => {
       if (S.data.entries.some(e => e.type==='expense' && e.category===c.name && countsInTotal(e) && cycleOf(e).startsWith(Y)))
@@ -683,7 +696,8 @@ function viewYear(){
     line(`${esc(g)} 소계`, m => sumWhere(m, e => e.type==='expense' && groupOf('expense', e.category)===g), 'sub');
   });
   const exp = line('지출 합계', m => sumWhere(m, e => e.type==='expense'), 'sub');
-  rows.push({label:'<span class="muted">(참고) 공동생활비로 쓴 돈</span>', v:cell(m => byMonth[m].filter(e => !countsInTotal(e)).reduce((a,e)=>a + +e.amount,0))}); rows.at(-1).total = rows.at(-1).v.reduce((a,b)=>a+b,0);
+  rows.push({label:'<span class="muted">(참고) 개인 정산 대상</span>', v:cell(m => byMonth[m].filter(isPersonal).reduce((a,e)=>a + +e.amount,0))}); rows.at(-1).total = rows.at(-1).v.reduce((a,b)=>a+b,0);
+  rows.push({label:'<span class="muted">(참고) 공동생활비로 쓴 돈</span>', v:cell(m => byMonth[m].filter(fromSharedFund).reduce((a,e)=>a + +e.amount,0))}); rows.at(-1).total = rows.at(-1).v.reduce((a,b)=>a+b,0);
   grp('저축');
   cats('saving').forEach(c => { if (S.data.entries.some(e => e.type==='saving' && e.category===c.name && cycleOf(e).startsWith(Y)))
     line('　' + c.name, m => sumWhere(m, e => e.type==='saving' && e.category===c.name)); });
@@ -914,7 +928,9 @@ function importCardRows(rows, pm){
       <td class="num">${won(e.amount)}</td><td><button class="btn sm ghost" data-ir="${i}">+규칙</button></td></tr>`).join('')}</table></div>
     <button class="btn pri" id="imp-go">가져오기</button> <button class="btn ghost" id="imp-x">취소</button></div>`;
   document.querySelectorAll('[data-im]').forEach(s => s.onchange = () => items[+s.dataset.im].member = s.value);
-  document.querySelectorAll('[data-ic]').forEach(s => s.onchange = () => items[+s.dataset.ic].category = s.value);
+  document.querySelectorAll('[data-ic]').forEach(s => s.onchange = () => { const it = items[+s.dataset.ic]; it.category = s.value;
+    const who = groupOf('expense', s.value) === PERSONAL_GROUP && personOfCat(s.value);
+    if (who) { it.member = who; document.querySelector(`[data-im="${s.dataset.ic}"]`).value = who; } });
   document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => {
     const e = items[+b.dataset.ir];
     const kw = prompt('가맹점 이름에 이 글자가 들어가면 같은 분류로 넣어요. 키워드를 확인하세요', ruleKeyword(e.detail));
