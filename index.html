@@ -457,7 +457,8 @@ function bindEntryForm(e){
     S.edit = isNew && !S.returnTo ? {...newEntry(item.type), date:item.date, member:item.member, payMethod:item.payMethod, category:item.category} : null;
     if (S.returnTo) { S.view = S.returnTo; S.returnTo = null; }
     if (TYPES[item.type]) S.f.type = item.type;
-    ops([{op:'upsert', col:'entries', item}], isNew ? '추가했어요' : '수정했어요');
+    const where = cycleOf(item), shown = S.month;
+    ops([{op:'upsert', col:'entries', item}], where !== shown ? `${monthLabel(where)} 가계부에 ${isNew ? '추가' : '수정'}했어요 (지금 보는 달이 아니에요)` : (isNew ? '추가했어요' : '수정했어요'));
   };
 }
 function newEntry(type='expense'){ return {type, date:today(), amount:0, category:cats(type)[0]?.name||'', detail:'', member:'s', payMethod:'', memo:'', month:''}; }
