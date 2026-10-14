@@ -89,7 +89,7 @@ svg text{fill:var(--muted2);font-size:11px}
 const RESULTS = {wait:'대기', win:'적중', lose:'미적중', refund:'적특·환불'};
 const DEFAULTS = {games:['프로토 승부식','프로토 기록식','축구토토 승무패','야구토토','농구토토','배구토토','기타'], monthlyLimit:0};
 const S = {data:null, view:'list', month:null, year:null, edit:null, f:{res:'all', game:'all'},
-  g:{league:'EPL', date:null, mode:'games', open:null}, sc:new Map(), autoDone:false};
+  g:{league:'EPL', date:null, mode:'games', open:null}, n:{league:'EPL', mode:'news', tag:'all', q:''}, sc:new Map(), autoDone:false};
 const LEAGUES = {EPL:'EPL', LALIGA:'라리가', BUNDES:'분데스', SERIEA:'세리에A', LIGUE1:'리그1', MLB:'MLB', KBO:'KBO', NBA:'NBA'};
 const SPORT = l => ['MLB','KBO'].includes(l) ? 'baseball' : l === 'NBA' ? 'basketball' : 'soccer';
 const PICKS = {'':'선택 안 함 (자동 판정 안 함)', home:'홈 승', draw:'무승부', away:'원정 승'};
@@ -154,7 +154,7 @@ function header(){
   return `<header><div class="top"><h1>도토리 방앗간</h1>
     <span class="switch"><a href="index.html">가계부</a><a class="on">도토리 방앗간</a></span>
     <span class="sync"><a href="#" id="logout" style="color:inherit">로그아웃</a></span></div>
-    <nav>${[['list','기록'],['games','경기'],['stats','통계'],['set','설정']].map(([k,l]) => `<button data-v="${k}" class="${S.view===k?'on':''}">${l}</button>`).join('')}</nav></header>`;
+    <nav>${[['list','기록'],['games','경기'],['news','뉴스'],['stats','통계'],['set','설정']].map(([k,l]) => `<button data-v="${k}" class="${S.view===k?'on':''}">${l}</button>`).join('')}</nav></header>`;
 }
 function renderLogin(msg){
   $('#app').innerHTML = `<header><div class="top" style="padding-bottom:12px"><h1>도토리 방앗간</h1>
@@ -179,7 +179,7 @@ function render(){
   $('#app').innerHTML = header() + '<main id="main"></main>';
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.view = b.dataset.v; S.edit = null; render(); });
   $('#logout').onclick = async ev => { ev.preventDefault(); await sb.auth.signOut(); S.data = null; renderLogin(); };
-  ({list:viewList, games:viewGames, stats:viewStats, set:viewSet})[S.view]();
+  ({list:viewList, games:viewGames, news:viewNews, stats:viewStats, set:viewSet})[S.view]();
 }
 function monthPicker(){
   return `<div class="row"><button class="btn sm" id="mp">‹</button><b style="min-width:96px;text-align:center">${monthLabel(S.month)}</b><button class="btn sm" id="mn">›</button></div>`;
@@ -552,6 +552,89 @@ async function autoJudge(){
   }
   if (upd.length) await save(upd, [], `경기 결과로 ${upd.length}건을 자동 반영했어요`);
   if (needPay.length) toast(`${needPay.length}건은 적중인데 배당률이 없어서 직접 당첨금을 넣어주세요`);
+}
+
+// ===== 뉴스 (ESPN, 영어) =====
+const ESPN_PATH = {EPL:'soccer/eng.1', LALIGA:'soccer/esp.1', BUNDES:'soccer/ger.1', SERIEA:'soccer/ita.1', LIGUE1:'soccer/fra.1', MLB:'baseball/mlb', NBA:'basketball/nba'};
+const NEWS_TAGS = {
+  injury: [/injur|ruled out|sidelined|hamstring|knee|ankle|groin|calf|thigh|concussion|surgery|fitness (test|doubt)|out for|day-to-day|injured list|\bIL\b|setback|return(s|ing)? from/i, '부상'],
+  transfer: [/transfer|sign(s|ed|ing)\b|\bdeal\b|loan|\bbid\b|joins|move to|contract|extension|free agent|trade[ds]?\b|acquire|release clause|fee/i, '이적·계약'],
+  ban: [/suspend|suspension|\bban(ned)?\b|red card|disciplin/i, '징계'],
+};
+const tagsOf = a => Object.entries(NEWS_TAGS).filter(([, [re]]) => re.test(`${a.headline} ${a.description}`)).map(([k]) => k);
+const INJ_STATUS = {'Out':'결장', 'Day-To-Day':'출전 미정', 'Questionable':'출전 불확실', 'Doubtful':'결장 유력', 'Probable':'출전 유력', 'Suspension':'징계',
+  '10-Day-IL':'10일 IL', '15-Day-IL':'15일 IL', '60-Day-IL':'60일 IL', '7-Day-IL':'7일 IL'};
+const BODY = {Knee:'무릎', Ankle:'발목', Hamstring:'햄스트링', Back:'허리', Shoulder:'어깨', Foot:'발', Hip:'엉덩이', Groin:'사타구니', Calf:'종아리', Wrist:'손목',
+  Hand:'손', Elbow:'팔꿈치', Finger:'손가락', Thumb:'엄지', Achilles:'아킬레스건', Concussion:'뇌진탕', Illness:'질병', Oblique:'옆구리', Quadriceps:'대퇴사두',
+  Toe:'발가락', Neck:'목', Rib:'갈비뼈', Abdomen:'복부', Forearm:'전완', Lat:'광배근', Leg:'다리', Shin:'정강이', Thigh:'허벅지', Head:'머리', Chest:'가슴', Personal:'개인 사유', 'Not Injury Related':'부상 외'};
+async function espnGet(path){
+  try { const r = await fetch('https://site.api.espn.com' + path); if (!r.ok) throw new Error('ESPN ' + r.status); return await r.json(); }
+  catch(e){ return await sports({league:'ESPN', kind:'raw', path}); }   // 브라우저에서 막히면 서버로
+}
+function viewNews(){
+  const N = S.n;
+  const leagues = Object.keys(ESPN_PATH);
+  if (!leagues.includes(N.league)) N.league = 'EPL';
+  const hasInj = N.league === 'NBA' || N.league === 'MLB';
+  if (!hasInj) N.mode = 'news';
+  $('#main').innerHTML = `
+    <div class="chips" style="margin-bottom:10px">${leagues.map(k => `<button class="chip" data-nl="${k}" style="cursor:pointer;padding:5px 12px;${N.league===k?'background:var(--ink);color:var(--bg);border-color:var(--ink)':''}">${LEAGUES[k]}</button>`).join('')}</div>
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <div class="row">
+        ${hasInj ? `<div class="seg"><button data-nm="news" class="${N.mode==='news'?'on':''}">뉴스</button><button data-nm="inj" class="${N.mode==='inj'?'on':''}">부상자 명단</button></div>` : ''}
+        ${N.mode==='news' ? `<div class="seg">${[['all','전체'],['injury','부상'],['transfer','이적·계약'],['ban','징계']].map(([k,l]) => `<button data-nt="${k}" class="${N.tag===k?'on':''}">${l}</button>`).join('')}</div>` : ''}
+      </div>
+      <input id="nq" placeholder="팀·선수 검색 (예: 토트넘, Son)" value="${esc(N.q)}" style="min-width:200px">
+    </div>
+    <div id="nbox"><div class="empty">불러오는 중…</div></div>
+    <p class="muted" style="margin-top:12px">출처: ESPN · 기사는 영어 원문이에요. 제목을 누르면 원문이 새 창으로 열려요.</p>`;
+  document.querySelectorAll('[data-nl]').forEach(b => b.onclick = () => { N.league = b.dataset.nl; render(); });
+  document.querySelectorAll('[data-nm]').forEach(b => b.onclick = () => { N.mode = b.dataset.nm; render(); });
+  document.querySelectorAll('[data-nt]').forEach(b => b.onclick = () => { N.tag = b.dataset.nt; render(); });
+  let qt; $('#nq').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { N.q = e.target.value.trim(); draw(); }, 250); };
+  const box = $('#nbox'), path = ESPN_PATH[N.league];
+  const key = N.league + N.mode;
+  let data = null;
+  const draw = () => { if (!data || $('#nbox') !== box) return; box.innerHTML = N.mode === 'inj' ? injHTML(data) : newsHTML(data); };
+  const load = N.mode === 'inj' ? espnGet(`/apis/site/v2/sports/${path}/injuries`) : espnGet(`/apis/site/v2/sports/${path}/news?limit=40`);
+  load.then(j => { data = j; if (S._nkey !== key) S._nkey = key; draw(); })
+      .catch(e => { if ($('#nbox') === box) box.innerHTML = `<div class="panel empty">${esc(e.message)}</div>`; });
+}
+const matchQ = (q, ...texts) => { if (!q) return true; const t = texts.join(' ').toLowerCase(); return q.toLowerCase().split(/\s+/).every(w => t.includes(w)); };
+function ago(iso){
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  return m < 60 ? `${Math.max(1,m)}분 전` : m < 1440 ? `${Math.round(m/60)}시간 전` : `${Math.round(m/1440)}일 전`;
+}
+function newsHTML(j){
+  const N = S.n;
+  const list = (j.articles || []).filter(a => a.headline).map(a => {
+    const teams = (a.categories || []).filter(c => c.type === 'team').map(c => c.description || c.team?.description || '').filter(Boolean);
+    return {...a, tags: tagsOf(a), teams, teamsKo: teams.map(t => ko(t, N.league))};
+  }).filter(a => (N.tag === 'all' || a.tags.includes(N.tag)) && matchQ(N.q, a.headline, a.description, ...a.teams, ...a.teamsKo));
+  if (!list.length) return '<div class="panel empty">조건에 맞는 뉴스가 없어요</div>';
+  return list.map(a => `<div class="mcard" style="display:block;cursor:default">
+    <div class="row" style="gap:12px;align-items:flex-start;flex-wrap:nowrap">
+      ${a.images?.[0]?.url ? `<img src="${esc(a.images[0].url)}" alt="" loading="lazy" style="width:96px;height:64px;object-fit:cover;border-radius:8px;flex:none">` : ''}
+      <div style="min-width:0">
+        <a href="${esc(a.links?.web?.href || '#')}" target="_blank" rel="noopener" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(a.headline)}</a>
+        <div class="muted" style="margin-top:3px">${esc(a.description || '')}</div>
+        <div class="msub">${a.tags.map(t => `<span class="tag ${t==='injury'?'lose':t==='transfer'?'win':'wait'}">${NEWS_TAGS[t][1]}</span>`).join('')}
+          ${a.teamsKo.slice(0,3).map(t => `<span class="tag">${esc(t)}</span>`).join('')}<span>${a.published ? ago(a.published) : ''}</span></div>
+      </div></div></div>`).join('');
+}
+function injHTML(j){
+  const N = S.n;
+  const teams = (j.injuries || []).map(t => ({name: t.displayName, ko: ko(t.displayName, N.league),
+    rows: (t.injuries || []).filter(i => matchQ(N.q, t.displayName, ko(t.displayName, N.league), i.athlete?.displayName))})).filter(t => t.rows.length);
+  if (!teams.length) return '<div class="panel empty">부상자 정보가 없어요</div>';
+  const part = d => { if (!d) return ''; const b = BODY[d.type] || d.type || ''; const side = d.side === 'Left' ? '왼쪽 ' : d.side === 'Right' ? '오른쪽 ' : ''; return side + b + (d.detail ? ` (${d.detail})` : ''); };
+  return teams.map(t => `<div class="panel"><h2>${esc(t.ko)} <small>${t.rows.length}명</small></h2>
+    ${t.rows.map(i => `<div class="mrow" style="padding:7px 0;border-bottom:1px solid var(--line);align-items:center">
+      <span style="min-width:0"><b>${esc(i.athlete?.displayName || '')}</b> <span class="muted">${esc(i.athlete?.position?.abbreviation || '')}</span>
+        <div class="muted">${esc(part(i.details))}${i.shortComment ? ` · <span title="${esc(i.longComment || '')}">${esc(i.shortComment.length > 90 ? i.shortComment.slice(0, 90) + '…' : i.shortComment)}</span>` : ''}</div></span>
+      <span style="text-align:right;white-space:nowrap"><span class="tag ${/Out|IL/.test(i.status)?'lose':'wait'}">${esc(INJ_STATUS[i.status] || i.status || '')}</span>
+        ${i.details?.returnDate ? `<div class="muted">복귀 예상 ${i.details.returnDate.slice(5).replace('-','/')}</div>` : ''}</span></div>`).join('')}
+  </div>`).join('');
 }
 
 // ===== 내 기록 분석 =====
