@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>배트맨 토토 가계부</title>
+<title>도토리 방앗간</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -125,7 +125,7 @@ async function save(list, del, msg){
     for (const b of list) { const i = S.data.bets.findIndex(x => x.id === b.id); if (i >= 0) S.data.bets[i] = b; else S.data.bets.push(b); }
     S.data.bets = S.data.bets.filter(b => !(del || []).includes(b.id));
     render(); if (msg) toast(msg);
-  } catch(e){ toast('저장 실패: ' + (/row-level/.test(e.message) ? '이 이메일은 토토 가계부 권한이 없어요' : e.message)); }
+  } catch(e){ toast('저장 실패: ' + (/row-level/.test(e.message) ? '이 이메일은 도토리 방앗간 권한이 없어요' : e.message)); }
 }
 async function saveSettings(msg){
   try { check(await sb.from('toto_settings').upsert({id:1, data:S.data.settings, updated_at:new Date().toISOString()})); render(); toast(msg || '저장했어요'); }
@@ -147,16 +147,16 @@ function stats(list){
 
 // ---------- 화면 ----------
 function header(){
-  return `<header><div class="top"><h1>배트맨 토토 가계부</h1>
-    <span class="switch"><a href="index.html">가계부</a><a class="on">토토</a></span>
+  return `<header><div class="top"><h1>도토리 방앗간</h1>
+    <span class="switch"><a href="index.html">가계부</a><a class="on">도토리 방앗간</a></span>
     <span class="sync"><a href="#" id="logout" style="color:inherit">로그아웃</a></span></div>
     <nav>${[['list','기록'],['stats','통계'],['set','설정']].map(([k,l]) => `<button data-v="${k}" class="${S.view===k?'on':''}">${l}</button>`).join('')}</nav></header>`;
 }
 function renderLogin(msg){
-  $('#app').innerHTML = `<header><div class="top" style="padding-bottom:12px"><h1>배트맨 토토 가계부</h1>
-    <span class="switch"><a href="index.html">가계부</a><a class="on">토토</a></span></div></header>
-    <div class="panel login"><h2>토토 가계부 로그인</h2>
-    <p class="muted" style="margin-top:-6px">토토 가계부는 들어올 때마다 로그인이 필요해요.</p>
+  $('#app').innerHTML = `<header><div class="top" style="padding-bottom:12px"><h1>도토리 방앗간</h1>
+    <span class="switch"><a href="index.html">가계부</a><a class="on">도토리 방앗간</a></span></div></header>
+    <div class="panel login"><h2>도토리 방앗간 로그인</h2>
+    <p class="muted" style="margin-top:-6px">도토리 방앗간은 들어올 때마다 로그인이 필요해요.</p>
     <form id="lf" class="grid"><label class="f">이메일<input type="email" id="em" autocomplete="username" autofocus></label>
     <label class="f">비밀번호<input type="password" id="pw" autocomplete="current-password"></label>
     <button class="btn pri">들어가기</button><div class="muted" id="lerr">${esc(msg||'')}</div></form></div>`;
@@ -165,7 +165,7 @@ function renderLogin(msg){
     if (r.error) return $('#lerr').textContent = '이메일 또는 비밀번호가 맞지 않아요';
     // 토토 권한 확인 (허용 목록에 없으면 설정 조회가 거부되진 않지만 쓰기가 막히므로 미리 확인)
     const ok = await sb.rpc('is_toto');
-    if (ok.error || !ok.data) { await sb.auth.signOut(); return $('#lerr').textContent = '이 이메일은 토토 가계부 권한이 없어요'; }
+    if (ok.error || !ok.data) { await sb.auth.signOut(); return $('#lerr').textContent = '이 이메일은 도토리 방앗간 권한이 없어요'; }
     try { await load(); } catch(e){ $('#lerr').textContent = e.message; } };
 }
 function render(){
@@ -332,7 +332,7 @@ function viewSet(){
     const rows = [['날짜','게임','회차','경기·조합','구매','배당','결과','당첨금','손익','메모']].concat([...S.data.bets].sort((a,b) => a.date.localeCompare(b.date))
       .map(b => [b.date, b.game, b.round, b.desc, b.stake, b.odds, RESULTS[b.result], b.result==='win'?b.payout:'', b.result==='wait'?'':profit(b), b.memo]));
     const csv = '﻿' + rows.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }).join(',')).join('\r\n');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = `토토_기록_${today()}.csv`; a.click(); };
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = `도토리방앗간_기록_${today()}.csv`; a.click(); };
 }
 
 if (!sb) $('#app').innerHTML = '<div class="panel login">config.js 설정이 필요해요</div>'; else renderLogin();
