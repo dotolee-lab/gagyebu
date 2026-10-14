@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>배트맨 토토 가계부</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f4ef; --panel:#fffdf8; --ink:#23211c; --muted2:#7a7466; --line:#e4dfd3; --s:#ece9e1;
+  --accent:#3d5f99; --accent-soft:#e3e9f5; --win:#2f6f5e; --lose:#b4513a; --wait:#c4862b; --radius:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1a1916; --panel:#22211d; --ink:#ece8de; --muted2:#a39d8f; --line:#38352e; --s:#2d2b26;
+    --accent:#8fa9dc; --accent-soft:#26304a; --win:#6fb59e; --lose:#e0876f; --wait:#e0b060;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans KR",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.top{max-width:1180px;margin:0 auto;padding:14px 16px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.top h1{font-size:18px;margin:0;font-weight:700;letter-spacing:-.02em}
+.switch{display:inline-flex;border:1px solid var(--line);border-radius:99px;overflow:hidden;font-size:13px}
+.switch a{padding:4px 12px;text-decoration:none;color:var(--muted2)}
+.switch a.on{background:var(--ink);color:var(--bg)}
+.top .sync{font-size:12px;color:var(--muted2);margin-left:auto}
+nav{max-width:1180px;margin:0 auto;padding:0 16px;display:flex;gap:2px;overflow-x:auto}
+nav button{border:0;background:none;padding:10px 12px;cursor:pointer;color:var(--muted2);border-bottom:2px solid transparent;white-space:nowrap;font-weight:500}
+nav button.on{color:var(--ink);border-color:var(--accent)}
+main{max-width:1180px;margin:0 auto;padding:18px 16px 60px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+.panel h2{font-size:15px;margin:0 0 12px;font-weight:600}
+.panel h2 small{font-weight:400;color:var(--muted2);margin-left:6px}
+.grid{display:grid;gap:12px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.kpi .l{font-size:13px;color:var(--muted2)} .kpi .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums} .kpi .s{font-size:12px;color:var(--muted2)}
+.btn{border:1px solid var(--line);background:var(--panel);padding:7px 12px;border-radius:8px;cursor:pointer}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.sm{padding:3px 8px;font-size:13px} .btn.ghost{border-color:transparent;background:none} .btn.danger{color:var(--lose)}
+input,select{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:7px 9px;min-width:0}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted2)}
+label.f > input,label.f > select{font-size:15px;color:var(--ink)}
+.form{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;align-items:end}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--panel);padding:7px 12px;cursor:pointer}
+.seg button.on{background:var(--ink);color:var(--bg)}
+table{width:100%;border-collapse:collapse;font-size:14px;word-break:keep-all}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{font-size:12px;font-weight:600;color:var(--muted2);white-space:nowrap}
+.tbl{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;background:var(--s);white-space:nowrap}
+.tag.win{background:color-mix(in srgb,var(--win) 22%,transparent);color:var(--win)}
+.tag.lose{background:color-mix(in srgb,var(--lose) 18%,transparent);color:var(--lose)}
+.tag.wait{background:color-mix(in srgb,var(--wait) 22%,transparent);color:var(--wait)}
+.plus{color:var(--win)} .minus{color:var(--lose)}
+.muted{color:var(--muted2);font-size:13px}
+.empty{padding:28px;text-align:center;color:var(--muted2)}
+.bar{height:8px;border-radius:99px;background:var(--s);overflow:hidden} .bar>i{display:block;height:100%;background:var(--accent)} .bar.over>i{background:var(--lose)}
+.login{max-width:360px;margin:14vh auto;padding:24px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:14px;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+svg text{fill:var(--muted2);font-size:11px}
+.mlist{display:none}
+@media(max-width:700px){ .pc-only{display:none !important} .mlist{display:block} }
+.mcard{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px}
+.mcard.win{border-left-color:var(--win)} .mcard.lose{border-left-color:var(--lose)} .mcard.wait{border-left-color:var(--wait)}
+.mrow{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.mt{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msub{font-size:12.5px;color:var(--muted2);margin-top:5px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+.mact{display:flex;justify-content:flex-end;gap:2px;margin-top:4px} .mact .btn{padding:2px 8px;font-size:12.5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:99px;padding:3px 6px 3px 10px;font-size:13px;background:var(--bg)}
+.chip button{border:0;background:none;cursor:pointer;color:var(--muted2);padding:0 4px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+'use strict';
+const RESULTS = {wait:'대기', win:'적중', lose:'미적중', refund:'적특·환불'};
+const DEFAULTS = {games:['프로토 승부식','프로토 기록식','축구토토 승무패','야구토토','농구토토','배구토토','기타'], monthlyLimit:0};
+const S = {data:null, view:'list', month:null, year:null, edit:null, f:{res:'all', game:'all'}};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const won = n => (Math.round(n)||0).toLocaleString('ko-KR');
+const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + won(Math.abs(n));
+const pm = n => n > 0 ? 'plus' : n < 0 ? 'minus' : '';
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
+const ym = (y, m) => `${y}-${String(m).padStart(2,'0')}`;
+const shiftMonth = (s, k) => { let [y,m] = s.split('-').map(Number); m += k; while(m>12){m-=12;y++} while(m<1){m+=12;y--} return ym(y,m); };
+const monthLabel = s => { const [y,m] = s.split('-'); return `${y}년 ${+m}월`; };
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2200); }
+
+// ---------- 저장소: 가계부와 같은 Supabase, 다른 테이블 + 따로 로그인 (로그인 상태 저장 안 함) ----------
+const CFG = window.GAGYEBU_CONFIG || {};
+const sb = (CFG.supabaseUrl && window.supabase) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey,
+  {auth:{persistSession:false, autoRefreshToken:true, storageKey:'toto-auth'}}) : null;
+const chunk = (a, n) => Array.from({length:Math.ceil(a.length/n)}, (_,i) => a.slice(i*n, i*n+n));
+function check(res){ if (res.error) throw new Error(res.error.message); return res.data; }
+async function load(){
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const part = check(await sb.from('toto_bets').select('data').order('id').range(from, from + 999));
+    rows.push(...part); if (part.length < 1000) break;
+  }
+  const st = check(await sb.from('toto_settings').select('data').eq('id', 1).maybeSingle());
+  S.data = {bets: rows.map(r => r.data), settings: {...DEFAULTS, ...(st ? st.data : {})}};
+  render();
+}
+async function save(list, del, msg){
+  try {
+    const now = new Date().toISOString();
+    for (const c of chunk(list.map(b => ({id:b.id, data:{...b, updatedAt:now}, updated_at:now})), 500)) check(await sb.from('toto_bets').upsert(c));
+    for (const c of chunk(del || [], 200)) check(await sb.from('toto_bets').delete().in('id', c));
+    for (const b of list) { const i = S.data.bets.findIndex(x => x.id === b.id); if (i >= 0) S.data.bets[i] = b; else S.data.bets.push(b); }
+    S.data.bets = S.data.bets.filter(b => !(del || []).includes(b.id));
+    render(); if (msg) toast(msg);
+  } catch(e){ toast('저장 실패: ' + (/row-level/.test(e.message) ? '이 이메일은 토토 가계부 권한이 없어요' : e.message)); }
+}
+async function saveSettings(msg){
+  try { check(await sb.from('toto_settings').upsert({id:1, data:S.data.settings, updated_at:new Date().toISOString()})); render(); toast(msg || '저장했어요'); }
+  catch(e){ toast('저장 실패: ' + e.message); }
+}
+
+// ---------- 계산 ----------
+const payout = b => b.result === 'win' ? (+b.payout || 0) : b.result === 'refund' ? (+b.stake || 0) : 0;
+const profit = b => b.result === 'wait' ? 0 : payout(b) - (+b.stake || 0);
+const betsOf = month => S.data.bets.filter(b => b.date.slice(0,7) === month);
+function stats(list){
+  const done = list.filter(b => b.result !== 'wait');
+  const stake = list.reduce((a,b) => a + (+b.stake||0), 0), stakeDone = done.reduce((a,b) => a + (+b.stake||0), 0);
+  const pay = done.reduce((a,b) => a + payout(b), 0), wins = done.filter(b => b.result === 'win').length;
+  const judged = done.filter(b => b.result !== 'refund').length;
+  return {count:list.length, stake, pay, profit: pay - stakeDone, hit: judged ? wins / judged * 100 : 0, wins, judged,
+          roi: stakeDone ? (pay - stakeDone) / stakeDone * 100 : 0, waiting: list.length - done.length};
+}
+
+// ---------- 화면 ----------
+function header(){
+  return `<header><div class="top"><h1>배트맨 토토 가계부</h1>
+    <span class="switch"><a href="index.html">가계부</a><a class="on">토토</a></span>
+    <span class="sync"><a href="#" id="logout" style="color:inherit">로그아웃</a></span></div>
+    <nav>${[['list','기록'],['stats','통계'],['set','설정']].map(([k,l]) => `<button data-v="${k}" class="${S.view===k?'on':''}">${l}</button>`).join('')}</nav></header>`;
+}
+function renderLogin(msg){
+  $('#app').innerHTML = `<header><div class="top" style="padding-bottom:12px"><h1>배트맨 토토 가계부</h1>
+    <span class="switch"><a href="index.html">가계부</a><a class="on">토토</a></span></div></header>
+    <div class="panel login"><h2>토토 가계부 로그인</h2>
+    <p class="muted" style="margin-top:-6px">토토 가계부는 들어올 때마다 로그인이 필요해요.</p>
+    <form id="lf" class="grid"><label class="f">이메일<input type="email" id="em" autocomplete="username" autofocus></label>
+    <label class="f">비밀번호<input type="password" id="pw" autocomplete="current-password"></label>
+    <button class="btn pri">들어가기</button><div class="muted" id="lerr">${esc(msg||'')}</div></form></div>`;
+  $('#lf').onsubmit = async ev => { ev.preventDefault();
+    const r = await sb.auth.signInWithPassword({email: $('#em').value.trim(), password: $('#pw').value});
+    if (r.error) return $('#lerr').textContent = '이메일 또는 비밀번호가 맞지 않아요';
+    // 토토 권한 확인 (허용 목록에 없으면 설정 조회가 거부되진 않지만 쓰기가 막히므로 미리 확인)
+    const ok = await sb.rpc('is_toto');
+    if (ok.error || !ok.data) { await sb.auth.signOut(); return $('#lerr').textContent = '이 이메일은 토토 가계부 권한이 없어요'; }
+    try { await load(); } catch(e){ $('#lerr').textContent = e.message; } };
+}
+function render(){
+  if (!S.data) return renderLogin();
+  if (!S.month) S.month = today().slice(0,7);
+  if (!S.year) S.year = +S.month.slice(0,4);
+  $('#app').innerHTML = header() + '<main id="main"></main>';
+  document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.view = b.dataset.v; S.edit = null; render(); });
+  $('#logout').onclick = async ev => { ev.preventDefault(); await sb.auth.signOut(); S.data = null; renderLogin(); };
+  ({list:viewList, stats:viewStats, set:viewSet})[S.view]();
+}
+function monthPicker(){
+  return `<div class="row"><button class="btn sm" id="mp">‹</button><b style="min-width:96px;text-align:center">${monthLabel(S.month)}</b><button class="btn sm" id="mn">›</button></div>`;
+}
+function bindMonth(){ $('#mp').onclick = () => { S.month = shiftMonth(S.month,-1); render(); }; $('#mn').onclick = () => { S.month = shiftMonth(S.month,1); render(); }; }
+
+// ===== 기록 =====
+function betForm(b){
+  const games = S.data.settings.games;
+  return `<form id="bf" class="panel"><div class="row" style="justify-content:space-between;margin-bottom:10px"><b>${b.id ? '기록 수정' : '새 기록'}</b></div>
+    <div class="form">
+      <label class="f">날짜<input type="date" name="date" value="${esc(b.date)}" required></label>
+      <label class="f">게임<select name="game">${games.map(g => `<option ${g===b.game?'selected':''}>${esc(g)}</option>`).join('')}</select></label>
+      <label class="f">회차<input name="round" value="${esc(b.round)}" placeholder="예: 85회차"></label>
+      <label class="f" style="grid-column:span 2">경기·조합<input name="desc" value="${esc(b.desc)}" placeholder="예: 토트넘 승 + 레알 승"></label>
+      <label class="f">구매금액<input name="stake" inputmode="numeric" value="${b.stake?won(b.stake):''}" required></label>
+      <label class="f">배당률<input name="odds" inputmode="decimal" value="${b.odds||''}" placeholder="예: 3.25"></label>
+      <label class="f">결과<select name="result">${Object.entries(RESULTS).map(([k,l]) => `<option value="${k}" ${k===b.result?'selected':''}>${l}</option>`).join('')}</select></label>
+      <label class="f">당첨금<input name="payout" inputmode="numeric" value="${b.payout?won(b.payout):''}" placeholder="적중이면 자동 계산"></label>
+      <label class="f">메모<input name="memo" value="${esc(b.memo)}"></label>
+    </div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button type="button" class="btn ghost" id="bcancel">취소</button><button class="btn pri">${b.id?'수정 저장':'추가'}</button></div></form>`;
+}
+function bindBetForm(b){
+  const f = $('#bf');
+  const fmt = i => { const n = i.value.replace(/[^\d]/g,''); i.value = n ? (+n).toLocaleString('ko-KR') : ''; };
+  const calc = () => { if (f.result.value === 'win' && f.odds.value && f.stake.value && !f.payout.dataset.touched) {
+      const v = Math.floor(+f.stake.value.replace(/[^\d]/g,'') * +f.odds.value / 10) * 10; f.payout.value = v ? v.toLocaleString('ko-KR') : ''; } };
+  f.stake.oninput = () => { fmt(f.stake); calc(); }; f.odds.oninput = calc; f.result.onchange = calc;
+  f.payout.oninput = () => { f.payout.dataset.touched = 1; fmt(f.payout); };
+  $('#bcancel').onclick = () => { S.edit = null; render(); };
+  f.onsubmit = ev => { ev.preventDefault();
+    const item = {...b, date:f.date.value, game:f.game.value, round:f.round.value.trim(), desc:f.desc.value.trim(),
+      stake:+f.stake.value.replace(/[^\d]/g,''), odds:+f.odds.value || '', result:f.result.value,
+      payout: f.result.value === 'win' ? +f.payout.value.replace(/[^\d]/g,'') : 0, memo:f.memo.value.trim()};
+    if (!item.stake) return toast('구매금액을 입력하세요');
+    if (item.result === 'win' && !item.payout) return toast('당첨금을 입력하거나 배당률을 넣어주세요');
+    const isNew = !item.id; if (isNew) item.id = uid();
+    S.edit = isNew ? {date:item.date, game:item.game, round:item.round, result:'wait'} : null;
+    S.month = item.date.slice(0,7);
+    save([item], [], isNew ? '추가했어요' : '수정했어요');
+  };
+}
+function resTag(b){ return `<span class="tag ${b.result==='refund'?'':b.result}">${RESULTS[b.result]}</span>`; }
+function viewList(){
+  const all = betsOf(S.month), st = stats(all), lim = +S.data.settings.monthlyLimit || 0;
+  let list = all;
+  if (S.f.res !== 'all') list = list.filter(b => b.result === S.f.res);
+  if (S.f.game !== 'all') list = list.filter(b => b.game === S.f.game);
+  list = [...list].sort((a,b) => b.date.localeCompare(a.date) || (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  const editing = S.edit === 'new' ? {date:today(), game:S.data.settings.games[0], result:'wait'} : S.edit;
+  $('#main').innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}${editing ? '' : '<button class="btn pri" id="add">+ 기록 추가</button>'}</div>
+    ${editing ? betForm(editing) : ''}
+    <div class="grid kpis">
+      <div class="kpi"><div class="l">구매</div><div class="v">${won(st.stake)}</div><div class="s">${st.count}건${st.waiting?` · 결과 대기 ${st.waiting}건`:''}</div></div>
+      <div class="kpi"><div class="l">당첨</div><div class="v">${won(st.pay)}</div><div class="s">적중 ${st.wins}/${st.judged}건 (${st.hit.toFixed(0)}%)</div></div>
+      <div class="kpi"><div class="l">손익</div><div class="v ${pm(st.profit)}">${signed(st.profit)}</div><div class="s">수익률 ${st.roi.toFixed(1)}%</div></div>
+    </div>
+    ${lim ? `<div class="panel"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span>이번 달 구매 한도</span><b class="num ${st.stake>lim?'minus':''}">${won(st.stake)} / ${won(lim)}</b></div>
+      <div class="bar ${st.stake>lim?'over':''}"><i style="width:${Math.min(100, st.stake/lim*100)}%"></i></div>
+      ${st.stake>lim?`<div class="muted" style="margin-top:6px;color:var(--lose)">한도를 ${won(st.stake-lim)}원 넘었어요</div>`:''}</div>` : ''}
+    <div class="row" style="margin-bottom:10px">
+      <select id="fr"><option value="all">모든 결과</option>${Object.entries(RESULTS).map(([k,l]) => `<option value="${k}" ${S.f.res===k?'selected':''}>${l}</option>`).join('')}</select>
+      <select id="fg"><option value="all">모든 게임</option>${S.data.settings.games.map(g => `<option ${S.f.game===g?'selected':''}>${esc(g)}</option>`).join('')}</select>
+    </div>
+    <div class="mlist">${list.map(b => `<div class="mcard ${b.result}">
+      <div class="mrow"><span class="mt">${esc(b.desc || b.game)}</span><span class="num ${pm(profit(b))}" style="font-weight:700">${b.result==='wait' ? won(b.stake) : signed(profit(b))}</span></div>
+      <div class="msub"><span>${b.date.slice(5).replace('-','.')}</span><span>${esc(b.game)}</span>${b.round?`<span>${esc(b.round)}</span>`:''}<span>구매 ${won(b.stake)}</span>${b.odds?`<span>배당 ${b.odds}</span>`:''}${resTag(b)}</div>
+      ${b.memo?`<div class="msub">${esc(b.memo)}</div>`:''}
+      <div class="mact">${b.result==='wait'?`<button class="btn ghost" data-w="${b.id}">적중</button><button class="btn ghost" data-l="${b.id}">미적중</button>`:''}
+        <button class="btn ghost" data-e="${b.id}">수정</button><button class="btn ghost danger" data-d="${b.id}">삭제</button></div></div>`).join('') || '<div class="empty">기록이 없어요</div>'}</div>
+    <div class="tbl pc-only"><table>
+      <tr><th>날짜</th><th>게임</th><th>회차</th><th>경기·조합</th><th class="num">구매</th><th class="num">배당</th><th>결과</th><th class="num">당첨금</th><th class="num">손익</th><th>메모</th><th></th></tr>
+      ${list.map(b => `<tr><td class="num" style="text-align:left">${b.date.slice(5).replace('-','.')}</td><td style="white-space:nowrap">${esc(b.game)}</td><td>${esc(b.round)}</td><td>${esc(b.desc)}</td>
+        <td class="num">${won(b.stake)}</td><td class="num">${b.odds||''}</td><td>${resTag(b)}</td><td class="num">${b.result==='win'?won(b.payout):''}</td>
+        <td class="num ${pm(profit(b))}">${b.result==='wait'?'':signed(profit(b))}</td><td class="muted">${esc(b.memo)}</td>
+        <td style="white-space:nowrap">${b.result==='wait'?`<button class="btn sm" data-w="${b.id}">적중</button> <button class="btn sm" data-l="${b.id}">미적중</button>`:''}
+          <button class="btn sm ghost" data-e="${b.id}">수정</button><button class="btn sm ghost danger" data-d="${b.id}">삭제</button></td></tr>`).join('')
+        || '<tr><td colspan="11" class="empty">기록이 없어요</td></tr>'}
+    </table></div>`;
+  bindMonth();
+  if (editing) bindBetForm(editing);
+  if ($('#add')) $('#add').onclick = () => { S.edit = 'new'; render(); };
+  $('#fr').onchange = e => { S.f.res = e.target.value; render(); };
+  $('#fg').onchange = e => { S.f.game = e.target.value; render(); };
+  const byId = id => S.data.bets.find(b => b.id === id);
+  document.querySelectorAll('[data-e]').forEach(x => x.onclick = () => { S.edit = {...byId(x.dataset.e)}; render(); window.scrollTo(0,0); });
+  document.querySelectorAll('[data-d]').forEach(x => x.onclick = () => { const b = byId(x.dataset.d);
+    if (confirm(`${b.date} ${b.desc||b.game} 기록을 삭제할까요?`)) save([], [b.id], '삭제했어요'); });
+  document.querySelectorAll('[data-l]').forEach(x => x.onclick = () => save([{...byId(x.dataset.l), result:'lose', payout:0}], [], '미적중으로 표시했어요'));
+  document.querySelectorAll('[data-w]').forEach(x => x.onclick = () => { const b = byId(x.dataset.w);
+    const guess = b.odds ? Math.floor(b.stake * b.odds / 10) * 10 : '';
+    const v = prompt('당첨금을 입력하세요', guess ? guess.toLocaleString('ko-KR') : ''); if (v === null) return;
+    const n = +String(v).replace(/[^\d]/g,''); if (!n) return toast('당첨금을 입력하세요');
+    save([{...b, result:'win', payout:n}], [], `적중! ${won(n)}원`); });
+}
+
+// ===== 통계 =====
+function viewStats(){
+  const Y = S.year, months = Array.from({length:12}, (_,i) => ym(Y, i+1));
+  const per = months.map(m => stats(betsOf(m)));
+  const yearBets = S.data.bets.filter(b => b.date.startsWith(String(Y))), ys = stats(yearBets), all = stats(S.data.bets);
+  let cum = 0; const cumArr = per.map(p => (cum += p.profit));
+  const games = [...new Set(yearBets.map(b => b.game))].map(g => ({g, ...stats(yearBets.filter(b => b.game === g))})).sort((a,b) => b.stake - a.stake);
+  // 월별 손익 막대 + 누적 선
+  const W = 860, H = 220, P = {l:60, r:10, t:12, b:24}, step = (W-P.l-P.r)/12;
+  const vals = per.map(p => p.profit).concat(cumArr), raw = Math.max(1000, ...vals.map(Math.abs)), pw = 10 ** Math.floor(Math.log10(raw)), mx = Math.ceil(raw / pw) * pw;
+  const y = v => P.t + (H-P.t-P.b) * (1 - (v + mx) / (2*mx));
+  const chart = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="월별 손익">
+    ${[-mx, -mx/2, 0, mx/2, mx].map(t => `<line x1="${P.l}" x2="${W-P.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" ${t===0?'stroke-width="1.5"':''}/><text x="${P.l-6}" y="${y(t)+4}" text-anchor="end">${Math.abs(t)>=10000?(+(t/10000).toFixed(1)).toLocaleString()+'만':Math.round(t).toLocaleString()}</text>`).join('')}
+    ${per.map((p,i) => { const x = P.l + step*i + step*0.25, top = Math.min(y(0), y(p.profit)), h = Math.abs(y(p.profit) - y(0));
+      return `<rect x="${x}" y="${top}" width="${step*0.5}" height="${h}" rx="2" fill="${p.profit>=0?'var(--win)':'var(--lose)'}"><title>${i+1}월 ${signed(p.profit)}원</title></rect><text x="${P.l+step*i+step/2}" y="${H-6}" text-anchor="middle">${i+1}월</text>`; }).join('')}
+    <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${cumArr.map((v,i) => `${P.l+step*i+step/2},${y(v)}`).join(' ')}"/>
+  </svg>`;
+  $('#main').innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:14px"><div class="row"><button class="btn sm" id="yp">‹</button><b>${Y}년</b><button class="btn sm" id="yn">›</button></div></div>
+    <div class="grid kpis">
+      <div class="kpi"><div class="l">${Y}년 구매</div><div class="v">${won(ys.stake)}</div><div class="s">${ys.count}건</div></div>
+      <div class="kpi"><div class="l">${Y}년 당첨</div><div class="v">${won(ys.pay)}</div><div class="s">적중률 ${ys.hit.toFixed(0)}%</div></div>
+      <div class="kpi"><div class="l">${Y}년 손익</div><div class="v ${pm(ys.profit)}">${signed(ys.profit)}</div><div class="s">수익률 ${ys.roi.toFixed(1)}%</div></div>
+      <div class="kpi"><div class="l">전체 누적 손익</div><div class="v ${pm(all.profit)}">${signed(all.profit)}</div><div class="s">총 구매 ${won(all.stake)}</div></div>
+    </div>
+    <div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">월별 손익</h2>
+      <span class="muted"><span style="color:var(--win)">■</span> 이익 <span style="color:var(--lose)">■</span> 손실 <span style="color:var(--accent)">━</span> 누적</span></div>${chart}</div>
+    <div class="panel"><h2>월별</h2><div class="tbl" style="border:0"><table>
+      <tr><th>월</th><th class="num">건수</th><th class="num">구매</th><th class="num">당첨</th><th class="num">손익</th><th class="num">적중률</th><th class="num">누적 손익</th></tr>
+      ${per.map((p,i) => p.count ? `<tr><td>${i+1}월</td><td class="num">${p.count}</td><td class="num">${won(p.stake)}</td><td class="num">${won(p.pay)}</td>
+        <td class="num ${pm(p.profit)}">${signed(p.profit)}</td><td class="num">${p.judged?p.hit.toFixed(0)+'%':'-'}</td><td class="num ${pm(cumArr[i])}">${signed(cumArr[i])}</td></tr>` : '').join('') || '<tr><td colspan="7" class="empty">기록이 없어요</td></tr>'}
+    </table></div></div>
+    <div class="panel"><h2>게임별 <small>${Y}년</small></h2><div class="tbl" style="border:0"><table>
+      <tr><th>게임</th><th class="num">건수</th><th class="num">구매</th><th class="num">손익</th><th class="num">적중률</th><th class="num">수익률</th></tr>
+      ${games.map(g => `<tr><td>${esc(g.g)}</td><td class="num">${g.count}</td><td class="num">${won(g.stake)}</td><td class="num ${pm(g.profit)}">${signed(g.profit)}</td>
+        <td class="num">${g.judged?g.hit.toFixed(0)+'%':'-'}</td><td class="num">${g.roi.toFixed(1)}%</td></tr>`).join('') || '<tr><td colspan="6" class="empty">기록이 없어요</td></tr>'}
+    </table></div></div>`;
+  $('#yp').onclick = () => { S.year--; render(); }; $('#yn').onclick = () => { S.year++; render(); };
+}
+
+// ===== 설정 =====
+function viewSet(){
+  const st = S.data.settings;
+  $('#main').innerHTML = `
+    <div class="panel"><h2>월 구매 한도 <small>넘으면 기록 화면에 빨간색으로 알려줘요 (0이면 사용 안 함)</small></h2>
+      <div class="row"><input id="lim" inputmode="numeric" value="${st.monthlyLimit?won(st.monthlyLimit):''}" style="width:160px"><span class="muted">원</span><button class="btn pri" id="lim-save">저장</button></div></div>
+    <div class="panel"><h2>게임 종류</h2>
+      <div class="chips" style="margin-bottom:8px">${st.games.map((g,i) => `<span class="chip">${esc(g)}<button data-gd="${i}">×</button></span>`).join('')}</div>
+      <div class="row"><input id="gn" placeholder="예: 프로토 승부식" style="width:180px"><button class="btn sm" id="ga">추가</button></div></div>
+    <div class="panel"><h2>백업</h2><div class="row"><button class="btn" id="exp">전체 기록 CSV</button></div></div>`;
+  const lim = $('#lim'); lim.oninput = () => { const n = lim.value.replace(/[^\d]/g,''); lim.value = n ? (+n).toLocaleString('ko-KR') : ''; };
+  $('#lim-save').onclick = () => { st.monthlyLimit = +lim.value.replace(/[^\d]/g,'') || 0; saveSettings('한도를 저장했어요'); };
+  document.querySelectorAll('[data-gd]').forEach(b => b.onclick = () => { st.games.splice(+b.dataset.gd, 1); saveSettings(); });
+  $('#ga').onclick = () => { const n = $('#gn').value.trim(); if (!n || st.games.includes(n)) return; st.games.push(n); saveSettings(); };
+  $('#exp').onclick = () => {
+    const rows = [['날짜','게임','회차','경기·조합','구매','배당','결과','당첨금','손익','메모']].concat([...S.data.bets].sort((a,b) => a.date.localeCompare(b.date))
+      .map(b => [b.date, b.game, b.round, b.desc, b.stake, b.odds, RESULTS[b.result], b.result==='win'?b.payout:'', b.result==='wait'?'':profit(b), b.memo]));
+    const csv = '﻿' + rows.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }).join(',')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = `토토_기록_${today()}.csv`; a.click(); };
+}
+
+if (!sb) $('#app').innerHTML = '<div class="panel login">config.js 설정이 필요해요</div>'; else renderLogin();
+</script>
+</body>
+</html>
