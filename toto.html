@@ -348,6 +348,57 @@ function viewSet(){
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = `도토리방앗간_기록_${today()}.csv`; a.click(); };
 }
 
+// ===== 팀 이름 한글 =====
+const KO_SOCCER = [
+  // 잉글랜드
+  [/man(chester)?\.? ?city/i,'맨시티'],[/man(chester)?\.? ?(united|utd)/i,'맨유'],[/arsenal/i,'아스널'],[/aston villa/i,'애스턴 빌라'],[/bournemouth/i,'본머스'],
+  [/brentford/i,'브렌트퍼드'],[/brighton/i,'브라이턴'],[/burnley/i,'번리'],[/chelsea/i,'첼시'],[/crystal palace/i,'크리스털 팰리스'],[/everton/i,'에버턴'],
+  [/fulham/i,'풀럼'],[/ipswich/i,'입스위치'],[/leeds/i,'리즈'],[/leicester/i,'레스터'],[/liverpool/i,'리버풀'],[/newcastle/i,'뉴캐슬'],
+  [/nott(ingham|'?m)/i,'노팅엄'],[/southampton/i,'사우샘프턴'],[/sunderland/i,'선덜랜드'],[/tottenham|spurs/i,'토트넘'],[/west ham/i,'웨스트햄'],
+  [/wolves|wolverhampton/i,'울버햄튼'],[/sheffield utd|sheffield united/i,'셰필드 유나이티드'],[/luton/i,'루턴'],[/norwich/i,'노리치'],[/watford/i,'왓퍼드'],
+  [/west brom/i,'웨스트브롬'],[/middlesbrough/i,'미들즈브러'],[/coventry/i,'코번트리'],[/hull/i,'헐 시티'],[/stoke/i,'스토크'],[/swansea/i,'스완지'],
+  [/millwall/i,'밀월'],[/blackburn/i,'블랙번'],[/derby/i,'더비'],[/preston/i,'프레스턴'],[/portsmouth/i,'포츠머스'],[/wrexham/i,'렉섬'],[/birmingham/i,'버밍엄'],
+  // 스페인
+  [/atl[eé]tico|atleti/i,'아틀레티코 마드리드'],[/athletic/i,'아틀레틱 빌바오'],[/real madrid/i,'레알 마드리드'],[/bar(ç|c)a|barcelona/i,'바르셀로나'],
+  [/real sociedad/i,'레알 소시에다드'],[/sevilla/i,'세비야'],[/valencia/i,'발렌시아'],[/villarreal/i,'비야레알'],[/betis/i,'레알 베티스'],[/celta/i,'셀타 비고'],
+  [/osasuna/i,'오사수나'],[/getafe/i,'헤타페'],[/mallorca/i,'마요르카'],[/rayo/i,'라요 바예카노'],[/alav[eé]s/i,'알라베스'],[/girona/i,'지로나'],
+  [/espanyol/i,'에스파뇰'],[/legan[eé]s/i,'레가네스'],[/las palmas/i,'라스팔마스'],[/valladolid/i,'바야돌리드'],[/elche/i,'엘체'],[/levante/i,'레반테'],
+  [/oviedo/i,'레알 오비에도'],[/c[aá]diz/i,'카디스'],[/granada/i,'그라나다'],[/almer[ií]a/i,'알메리아'],[/racing/i,'라싱 산탄데르'],[/deportivo/i,'데포르티보'],
+  // 독일
+  [/bayern/i,'바이에른 뮌헨'],[/dortmund/i,'도르트문트'],[/leverkusen/i,'레버쿠젠'],[/leipzig/i,'라이프치히'],[/frankfurt/i,'프랑크푸르트'],[/stuttgart/i,'슈투트가르트'],
+  [/freiburg/i,'프라이부르크'],[/wolfsburg/i,'볼프스부르크'],[/gladbach|m[öo]nchengladbach/i,'묀헨글라트바흐'],[/union berlin/i,'우니온 베를린'],[/werder|bremen/i,'베르더 브레멘'],
+  [/mainz/i,'마인츠'],[/augsburg/i,'아우크스부르크'],[/hoffenheim/i,'호펜하임'],[/heidenheim/i,'하이덴하임'],[/bochum/i,'보훔'],[/st\.? ?pauli/i,'장크트 파울리'],
+  [/kiel/i,'홀슈타인 킬'],[/hamburg|hsv/i,'함부르크'],[/k[öo]ln|cologne/i,'쾰른'],[/darmstadt/i,'다름슈타트'],[/hertha/i,'헤르타'],[/schalke/i,'샬케'],
+  [/d[üu]sseldorf/i,'뒤셀도르프'],[/hannover/i,'하노버'],[/n[üu]rnberg/i,'뉘른베르크'],[/elversberg/i,'엘버스베르크'],[/kaiserslautern/i,'카이저슬라우테른'],[/paderborn/i,'파더보른'],
+  // 이탈리아
+  [/inter/i,'인터 밀란'],[/milan/i,'AC 밀란'],[/juventus/i,'유벤투스'],[/napoli/i,'나폴리'],[/roma/i,'AS 로마'],[/lazio/i,'라치오'],[/atalanta/i,'아탈란타'],
+  [/fiorentina/i,'피오렌티나'],[/bologna/i,'볼로냐'],[/torino/i,'토리노'],[/udinese/i,'우디네세'],[/genoa/i,'제노아'],[/cagliari/i,'칼리아리'],[/lecce/i,'레체'],
+  [/empoli/i,'엠폴리'],[/parma/i,'파르마'],[/como/i,'코모'],[/verona/i,'엘라스 베로나'],[/monza/i,'몬차'],[/venezia/i,'베네치아'],[/sassuolo/i,'사수올로'],
+  [/pisa/i,'피사'],[/cremonese/i,'크레모네세'],[/salernitana/i,'살레르니타나'],[/frosinone/i,'프로시노네'],[/sampdoria/i,'삼프도리아'],[/palermo/i,'팔레르모'],[/spezia/i,'스페치아'],
+  // 프랑스
+  [/psg|paris saint|paris sg/i,'파리 생제르맹'],[/paris fc/i,'파리 FC'],[/marseille/i,'마르세유'],[/lyon/i,'리옹'],[/monaco/i,'모나코'],[/lille/i,'릴'],[/nice/i,'니스'],
+  [/lens/i,'랑스'],[/rennes|rennais/i,'렌'],[/brest/i,'브레스트'],[/strasbourg/i,'스트라스부르'],[/toulouse/i,'툴루즈'],[/nantes/i,'낭트'],[/montpellier/i,'몽펠리에'],
+  [/reims/i,'랭스'],[/auxerre/i,'오세르'],[/angers/i,'앙제'],[/le havre/i,'르아브르'],[/saint-?[ée]tienne/i,'생테티엔'],[/lorient/i,'로리앙'],[/metz/i,'메스'],[/clermont/i,'클레르몽'],
+];
+const KO_MLB = [[/diamondbacks/i,'애리조나'],[/braves/i,'애틀랜타'],[/orioles/i,'볼티모어'],[/red sox/i,'보스턴'],[/cubs/i,'시카고 컵스'],[/white sox/i,'시카고 화이트삭스'],
+  [/reds/i,'신시내티'],[/guardians/i,'클리블랜드'],[/rockies/i,'콜로라도'],[/tigers/i,'디트로이트'],[/astros/i,'휴스턴'],[/royals/i,'캔자스시티'],[/angels/i,'LA 에인절스'],
+  [/dodgers/i,'LA 다저스'],[/marlins/i,'마이애미'],[/brewers/i,'밀워키'],[/twins/i,'미네소타'],[/mets/i,'뉴욕 메츠'],[/yankees/i,'뉴욕 양키스'],[/athletics/i,'애슬레틱스'],
+  [/phillies/i,'필라델피아'],[/pirates/i,'피츠버그'],[/padres/i,'샌디에이고'],[/giants/i,'샌프란시스코'],[/mariners/i,'시애틀'],[/cardinals/i,'세인트루이스'],
+  [/rays/i,'탬파베이'],[/rangers/i,'텍사스'],[/blue jays/i,'토론토'],[/nationals/i,'워싱턴']];
+const KO_NBA = [[/hawks/i,'애틀랜타'],[/celtics/i,'보스턴'],[/\bnets\b/i,'브루클린'],[/hornets/i,'샬럿'],[/bulls/i,'시카고'],[/cavaliers/i,'클리블랜드'],[/mavericks/i,'댈러스'],
+  [/nuggets/i,'덴버'],[/pistons/i,'디트로이트'],[/warriors/i,'골든스테이트'],[/rockets/i,'휴스턴'],[/pacers/i,'인디애나'],[/clippers/i,'LA 클리퍼스'],[/lakers/i,'LA 레이커스'],
+  [/grizzlies/i,'멤피스'],[/heat/i,'마이애미'],[/bucks/i,'밀워키'],[/timberwolves/i,'미네소타'],[/pelicans/i,'뉴올리언스'],[/knicks/i,'뉴욕'],[/thunder/i,'오클라호마시티'],
+  [/magic/i,'올랜도'],[/76ers|sixers/i,'필라델피아'],[/suns/i,'피닉스'],[/blazers/i,'포틀랜드'],[/kings/i,'새크라멘토'],[/spurs/i,'샌안토니오'],[/raptors/i,'토론토'],
+  [/jazz/i,'유타'],[/wizards/i,'워싱턴']];
+const KO_KBO = [[/kt/i,'KT 위즈'],[/nc/i,'NC 다이노스'],[/lg/i,'LG 트윈스'],[/doosan/i,'두산 베어스'],[/kia/i,'KIA 타이거즈'],[/hanwha/i,'한화 이글스'],
+  [/samsung/i,'삼성 라이온즈'],[/lotte/i,'롯데 자이언츠'],[/ssg|landers/i,'SSG 랜더스'],[/kiwoom|heroes/i,'키움 히어로즈']];
+function ko(name, league){
+  if (!name) return '?';
+  const list = league === 'MLB' ? KO_MLB : league === 'NBA' ? KO_NBA : league === 'KBO' ? KO_KBO : KO_SOCCER;
+  for (const [re, k] of list) if (re.test(name)) return k;
+  return name;
+}
+
 // ===== 경기 데이터 (Edge Function 'sports') =====
 async function sports(body){
   const k = JSON.stringify(body);
@@ -393,9 +444,9 @@ function gamesHTML(gs){
     <div class="mrow" style="align-items:center">
       <span class="muted" style="min-width:42px">${kstTime(g.start)}</span>
       <span style="flex:1;display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;min-width:0">
-        <b style="text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.home.name)} <span class="muted" style="font-weight:400;font-size:11px">홈</span></b>
+        <b style="text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(g.home.name)}">${esc(ko(g.home.name, g.league))} <span class="muted" style="font-weight:400;font-size:11px">홈</span></b>
         <b class="num" style="text-align:center;min-width:56px">${g.hs ?? '-'} : ${g.as ?? '-'}</b>
-        <b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.away.name)}</b></span>
+        <b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(g.away.name)}">${esc(ko(g.away.name, g.league))}</b></span>
       <span class="tag ${g.status==='final'?'':g.status==='live'?'win':'wait'}">${STATUS[g.status]||g.statusText}</span></div>
     <div class="mact"><button class="btn ghost" data-an="${g.id}">${S.g.open===g.id?'분석 닫기':'분석'}</button><button class="btn ghost" data-bet="${g.id}">기록하기</button></div>
     ${S.g.open===g.id ? `<div id="an-${g.id}" class="muted" style="padding:6px 0">분석 불러오는 중…</div>` : ''}
@@ -406,8 +457,8 @@ function bindGames(gs){
   document.querySelectorAll('[data-an]').forEach(b => b.onclick = () => { S.g.open = S.g.open === b.dataset.an ? null : b.dataset.an; $('#gbox').innerHTML = gamesHTML(gs); bindGames(gs); });
   document.querySelectorAll('[data-bet]').forEach(b => b.onclick = () => { const g = byId(b.dataset.bet);
     S.edit = {date: today() > kstDay(g.start) ? kstDay(g.start) : today(), game: SPORT(g.league) === 'soccer' ? '프로토 승부식' : S.data.settings.games[0],
-      desc: `${g.home.name} vs ${g.away.name}`, league: g.league, folders: 1, result: 'wait', pick: '',
-      match: {league:g.league, id:g.id, date:kstDay(g.start), home:g.home.name, away:g.away.name}};
+      desc: `${ko(g.home.name, g.league)} vs ${ko(g.away.name, g.league)}`, league: g.league, folders: 1, result: 'wait', pick: '',
+      match: {league:g.league, id:g.id, date:kstDay(g.start), home:ko(g.home.name, g.league), away:ko(g.away.name, g.league)}};
     S.view = 'list'; S.month = S.edit.date.slice(0,7); render(); window.scrollTo(0,0); });
   const g = S.g.open && byId(S.g.open);
   if (g) Promise.all([sports({league:g.league, kind:'team', team:g.home.id}), sports({league:g.league, kind:'team', team:g.away.id})])
@@ -425,16 +476,16 @@ function teamForm(teamId, games, before){
 function analysisHTML(g, hg, ag){
   const soccer = SPORT(g.league) === 'soccer', H = teamForm(g.home.id, hg, g.start), A = teamForm(g.away.id, ag, g.start);
   const recTxt = r => soccer ? `${r.w}승 ${r.d}무 ${r.l}패` : `${r.w}승 ${r.l}패`;
-  const chip = x => `<span class="tag ${x.r==='W'?'win':x.r==='L'?'lose':''}" title="${x.home?'홈':'원정'} vs ${esc(x.opp.name)} ${x.f}:${x.a}">${x.r==='W'?'승':x.r==='L'?'패':'무'}</span>`;
+  const chip = x => `<span class="tag ${x.r==='W'?'win':x.r==='L'?'lose':''}" title="${x.home?'홈':'원정'} vs ${esc(ko(x.opp.name, g.league))} ${x.f}:${x.a}">${x.r==='W'?'승':x.r==='L'?'패':'무'}</span>`;
   const h2h = H.all.filter(x => x.opp.id === g.away.id);
   const col = (name, T, side) => `<div style="flex:1;min-width:220px">
-    <b style="color:var(--ink)">${esc(name)}</b> <span class="muted">${side}</span>
+    <b style="color:var(--ink)">${esc(ko(name, g.league))}</b> <span class="muted">${side}</span>
     <div style="margin:6px 0">최근 5경기 ${T.last5.length ? T.last5.map(chip).join(' ') : '-'}</div>
     <div>시즌 ${recTxt(T.total)} · 홈 ${recTxt(T.home)} · 원정 ${recTxt(T.away)}</div>
     <div>평균 ${soccer?'득점':'득점'} ${T.gf} · 실점 ${T.ga}</div></div>`;
   return `<div style="padding:10px 0 4px;border-top:1px solid var(--line);margin-top:8px;color:var(--muted2);font-size:13px">
     <div class="row" style="align-items:flex-start;gap:18px">${col(g.home.name, H, '홈')}${col(g.away.name, A, '원정')}</div>
-    <div style="margin-top:8px">이번 시즌 맞대결 ${h2h.length ? `${esc(g.home.name)} 기준 ${recTxt({w:h2h.filter(x=>x.r==='W').length, d:h2h.filter(x=>x.r==='D').length, l:h2h.filter(x=>x.r==='L').length})} — ` + h2h.slice(-5).map(x => `${x.home?'홈':'원정'} ${x.f}:${x.a}`).join(', ') : '기록 없음'}</div>
+    <div style="margin-top:8px">이번 시즌 맞대결 ${h2h.length ? `${esc(ko(g.home.name, g.league))} 기준 ${recTxt({w:h2h.filter(x=>x.r==='W').length, d:h2h.filter(x=>x.r==='D').length, l:h2h.filter(x=>x.r==='L').length})} — ` + h2h.slice(-5).map(x => `${x.home?'홈':'원정'} ${x.f}:${x.a}`).join(', ') : '기록 없음'}</div>
   </div>`;
 }
 function standingsHTML(st){
@@ -443,7 +494,7 @@ function standingsHTML(st){
   return st.groups.map(gr => `<div class="panel">${gr.name?`<h2>${esc(gr.name)}</h2>`:''}<div class="tbl" style="border:0"><table>
     <tr><th>#</th><th>팀</th><th class="num">경기</th><th class="num">승</th>${soccer?'<th class="num">무</th>':''}<th class="num">패</th>
       ${soccer?'<th class="num">승점</th><th class="num">득실</th>':'<th class="num">승률</th>'}${S.g.league==='MLB'?'<th class="num">게임차</th>':''}</tr>
-    ${gr.rows.map(r => `<tr><td>${r.rank}</td><td>${esc(r.team.name)}</td><td class="num">${r.p}</td><td class="num">${r.w}</td>${soccer?`<td class="num">${r.d}</td>`:''}<td class="num">${r.l}</td>
+    ${gr.rows.map(r => `<tr><td>${r.rank}</td><td title="${esc(r.team.name)}">${esc(ko(r.team.name, S.g.league))}</td><td class="num">${r.p}</td><td class="num">${r.w}</td>${soccer?`<td class="num">${r.d}</td>`:''}<td class="num">${r.l}</td>
       ${soccer?`<td class="num"><b>${r.pts}</b></td><td class="num">${esc(r.gb||'')}</td>`:`<td class="num">${esc(r.pct??'')}</td>`}${S.g.league==='MLB'?`<td class="num">${esc(r.gb??'')}</td>`:''}</tr>`).join('')}
   </table></div></div>`).join('');
 }
