@@ -310,7 +310,7 @@ function viewDash(){
   set().members.concat([{id:'s',name:'공용'}]).forEach(m => byMember[m.id] = {income:0, expense:0});
   list.filter(countsInTotal).forEach(e => { if (byMember[e.member] && e.type!=='saving') byMember[e.member][e.type] += +e.amount; });
   const sharedIn = list.filter(e => e.type==='expense' && e.category==='공동생활비').reduce((a,e)=>a + +e.amount, 0);
-  const pendingRec = S.data.recurring.filter(r => r.active !== false && !list.some(e => e.recurringId === r.id));
+  const pendingRec = recPending(list);
   $('#main').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}
       <button class="btn pri" id="quick">+ 내역 입력</button></div>
@@ -481,6 +481,36 @@ function viewShared(){
 }
 
 // ===== 고정지출 =====
+// 고정항목이 이번 달에 이미 들어왔는지: 직접 입력분(recurringId) 또는 카드 내역에서 키워드로 찾기
+function recDone(r, list){
+  const byId = list.find(x => x.recurringId === r.id);
+  if (byId) return byId;
+  const kw = r.match || (r.source === 'card' ? ruleKeyword(r.detail) : '');
+  if (!kw) return null;
+  const hits = list.filter(x => x.type === r.type && x.category === r.category && matchKw(x.detail, kw));
+  return hits.find(x => +x.amount === +r.amount) || hits[0] || null;
+}
+const recPending = (list) => S.data.recurring.filter(r => r.active !== false && r.source !== 'card' && !recDone(r, list));
+// 지난 내역에서 고정항목 후보 찾기 (고정비1·2, 고정수익, 고정 저축)
+function recCandidates(){
+  const fixed = e => (e.type === 'expense' && /^고정비/.test(groupOf('expense', e.category))) ||
+    (e.type === 'income' && groupOf('income', e.category) === '고정수익') || (e.type === 'saving' && groupOf('saving', e.category) === '고정');
+  const map = new Map();
+  const ents = [...S.data.entries].filter(fixed).sort((a,b) => a.date.localeCompare(b.date));
+  const baseKey = e => [e.type, e.category, e.member, kwNorm(ruleKeyword(e.detail) || e.category)].join('|');
+  // 같은 달에 같은 가맹점이 여러 건이면(보험 2건 등) 금액으로 나눠서 따로 등록
+  const perMonth = {}; ents.forEach(e => { const k = cycleOf(e) + baseKey(e); perMonth[k] = (perMonth[k]||0) + 1; });
+  const multi = new Set(ents.filter(e => perMonth[cycleOf(e) + baseKey(e)] > 1).map(baseKey));
+  for (const e of ents) {
+    const kw = ruleKeyword(e.detail) || e.category;
+    const key = baseKey(e) + (multi.has(baseKey(e)) ? '|' + e.amount : '');
+    const c = map.get(key) || {count:0};
+    map.set(key, {...c, count:c.count+1, type:e.type, category:e.category, member:e.member, detail:e.detail || e.category, match:kw,
+      amount:+e.amount, day:+e.date.slice(8), payMethod:e.payMethod || '', source: e.recurringId ? 'manual' : (/카드/.test(e.payMethod||'') ? 'card' : 'manual')});
+  }
+  return [...map.values()].filter(c => !S.data.recurring.some(r => r.type===c.type && r.category===c.category && r.member===c.member &&
+    (matchKw(c.detail, r.match || ruleKeyword(r.detail)) || matchKw(r.detail, c.match))));
+}
 function genRecurring(month, list){
   const [y,m] = month.split('-').map(Number);
   const start = +set().cycleStartDay || 1;
@@ -505,9 +535,17 @@ function viewRec(){
   const tot = t => recs.filter(r => r.type===t && r.active!==false).reduce((a,r)=>a + +r.amount, 0);
   $('#main').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}
-      <div class="row"><button class="btn" id="radd">+ 고정항목 추가</button>
+      <div class="row"><button class="btn" id="rimp">내역에서 불러오기</button><button class="btn" id="radd">+ 고정항목 추가</button>
       <button class="btn pri" id="rgen">${monthLabel(S.month)}에 입력하기</button></div></div>
-    <p class="muted" style="margin-top:0">매달 나가는 용돈·보험·통신비·월세·적금, 매달 들어오는 월급 등을 등록해두면 한 번에 입력할 수 있어요. 이미 입력된 항목은 건너뛰어요.</p>
+    <p class="muted" style="margin-top:0">매달 고정으로 나가고 들어오는 돈의 목록이에요. <b>자동 입력</b> 항목(용돈 이체·공동생활비·대출이자·적금·월급 등)은 버튼 한 번으로 내역에 들어가고,
+      <b>카드내역</b> 항목(통신비·보험·도시가스·관리비 등)은 카드 내역을 올리면 들어왔는지 확인만 해요. 두 번 입력되지 않아요.</p>
+    ${S.recImp ? `<div class="panel" style="border-color:var(--accent)"><h2>지금까지 내역에서 찾은 고정항목 <small>${S.recImp.length}개 · 등록할 것만 체크하세요</small></h2>
+      ${S.recImp.length ? `<div class="tbl" style="max-height:420px"><table><tr><th></th><th>구분</th><th>상세</th><th>카테고리</th><th>사람</th><th>일</th><th class="num">최근 금액</th><th>들어오는 방식</th></tr>
+      ${S.recImp.map((c,i) => `<tr class="m-${c.member}"><td><input type="checkbox" data-ci="${i}" checked></td><td class="t-${c.type}">${TYPES[c.type]}</td>
+        <td>${esc(c.detail)} <span class="muted">${c.count}회</span></td><td>${esc(c.category)}</td><td class="mem">${esc(memberName(c.member))}</td><td>${c.day}일</td><td class="num">${won(c.amount)}</td>
+        <td><select data-cs="${i}"><option value="manual" ${c.source==='manual'?'selected':''}>자동 입력</option><option value="card" ${c.source==='card'?'selected':''}>카드내역</option></select></td></tr>`).join('')}
+      </table></div><div class="row" style="margin-top:10px"><button class="btn pri" id="ci-go">체크한 항목 등록</button><button class="btn ghost" id="ci-x">닫기</button></div>`
+      : `<div class="muted">새로 찾은 고정항목이 없어요. 고정비1·고정비2 카테고리 내역이 쌓이면 여기서 찾아요.</div><button class="btn ghost" id="ci-x">닫기</button>`}</div>` : ''}
     ${e ? `<form id="rf" class="panel"><h2>${e.id?'고정항목 수정':'고정항목 추가'}</h2><div class="form">
       <label class="f">구분<select name="type">${Object.entries(TYPES).map(([k,l])=>`<option value="${k}" ${e.type===k?'selected':''}>${l}</option>`).join('')}</select></label>
       <label class="f">카테고리<select name="category">${cats(e.type).map(c=>`<option ${c.name===e.category?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
@@ -516,6 +554,8 @@ function viewRec(){
       <label class="f">매달 며칠<input name="day" type="number" min="1" max="31" value="${e.day||25}"></label>
       <label class="f">사람<select name="member">${members.map(([id,n])=>`<option value="${id}" ${id===e.member?'selected':''}>${esc(n)}</option>`).join('')}</select></label>
       <label class="f">결제·계좌<select name="payMethod"><option value="">-</option>${set().payMethods.map(p=>`<option ${p.name===e.payMethod?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
+      <label class="f">들어오는 방식<select name="source"><option value="manual">자동 입력</option><option value="card" ${e.source==='card'?'selected':''}>카드내역</option></select></label>
+      <label class="f">카드내역 찾을 키워드<input name="match" value="${esc(e.match||'')}" placeholder="예: 메리츠"></label>
       <label class="f">사용<select name="active"><option value="1">사용</option><option value="0" ${e.active===false?'selected':''}>쉬는 중</option></select></label>
     </div><div class="row" style="margin-top:12px;justify-content:flex-end"><button type="button" class="btn ghost" id="rcancel">취소</button><button class="btn pri">저장</button></div></form>` : ''}
     <div class="grid kpis" style="margin-bottom:16px">
@@ -524,17 +564,25 @@ function viewRec(){
       <div class="kpi"><div class="l">고정저축</div><div class="v t-saving">${won(tot('saving'))}</div></div>
     </div>
     ${Object.keys(groups).length ? Object.entries(groups).map(([g, rs]) => `<div class="panel"><h2>${esc(g)}</h2><table>
-      <tr><th>상세</th><th>카테고리</th><th>사람</th><th>결제·계좌</th><th>일</th><th class="num">금액</th><th>${monthLabel(S.month)}</th><th></th></tr>
-      ${rs.map(r => { const done = list.find(x => x.recurringId===r.id);
+      <tr><th>상세</th><th>카테고리</th><th>사람</th><th>결제·계좌</th><th>방식</th><th>일</th><th class="num">금액</th><th>${monthLabel(S.month)}</th><th></th></tr>
+      ${rs.map(r => { const done = recDone(r, list);
         return `<tr class="m-${r.member}" style="${r.active===false?'opacity:.5':''}"><td>${esc(r.detail)}</td><td>${esc(r.category)}</td>
-        <td class="mem">${esc(memberName(r.member))}</td><td>${esc(r.payMethod)}</td><td>${r.day}일</td><td class="num">${won(r.amount)}</td>
-        <td>${done ? `<span class="tag">입력됨 ${won(done.amount)}</span>` : r.active===false ? '' : '<span class="tag warn">미입력</span>'}</td>
+        <td class="mem">${esc(memberName(r.member))}</td><td>${esc(r.payMethod)}</td><td class="muted">${r.source==='card'?'카드내역':'자동 입력'}</td><td>${r.day}일</td><td class="num">${won(r.amount)}</td>
+        <td>${done ? `<span class="tag">${r.source==='card'?'들어옴':'입력됨'} ${won(done.amount)}</span>` : r.active===false ? '' : r.source==='card' ? '<span class="tag">카드내역 대기</span>' : '<span class="tag warn">미입력</span>'}</td>
         <td style="white-space:nowrap"><button class="btn sm ghost" data-re="${r.id}">수정</button><button class="btn sm ghost danger" data-rd="${r.id}">삭제</button></td></tr>`; }).join('')}
       </table></div>`).join('') : '<div class="panel empty">등록된 고정항목이 없어요</div>'}`;
   bindMonth();
   $('#radd').onclick = () => { S.edit = {_rec:true, type:'expense', category:cats('expense')[0]?.name, detail:'', amount:0, day:25, member:'s', payMethod:''}; render(); };
-  $('#rgen').onclick = () => { const p = recs.filter(r => r.active!==false && !list.some(e => e.recurringId===r.id));
-    if (!p.length) return toast('이번 달 고정항목은 모두 입력돼 있어요');
+  $('#rimp').onclick = () => { S.recImp = recCandidates(); render(); };
+  if ($('#ci-x')) $('#ci-x').onclick = () => { S.recImp = null; render(); };
+  document.querySelectorAll('[data-cs]').forEach(s => s.onchange = () => S.recImp[+s.dataset.cs].source = s.value);
+  if ($('#ci-go')) $('#ci-go').onclick = () => {
+    const pick = S.recImp.filter((_, i) => document.querySelector(`[data-ci="${i}"]`).checked);
+    if (!pick.length) return toast('선택된 항목이 없어요');
+    S.recImp = null;
+    ops(pick.map(({count, ...c}) => ({op:'upsert', col:'recurring', item:{id:uid(), ...c, active:true}})), `${pick.length}개를 고정항목으로 등록했어요`); };
+  $('#rgen').onclick = () => { const p = recPending(list);
+    if (!p.length) return toast('자동 입력할 고정항목이 없어요 (카드내역 항목은 카드 내역을 올리면 들어와요)');
     if (confirm(`${monthLabel(S.month)}에 ${p.length}건을 입력할까요?`)) genRecurring(S.month, p); };
   document.querySelectorAll('[data-re]').forEach(b => b.onclick = () => { S.edit = {...recs.find(r=>r.id===b.dataset.re), _rec:true}; render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-rd]').forEach(b => b.onclick = () => { if (confirm('이 고정항목을 삭제할까요? (이미 입력된 내역은 남아요)')) ops([{op:'delete', col:'recurring', item:{id:b.dataset.rd}}], '삭제했어요'); });
@@ -545,7 +593,8 @@ function viewRec(){
     $('#rcancel').onclick = () => { S.edit = null; render(); };
     f.onsubmit = ev => { ev.preventDefault();
       const item = {id:e.id||uid(), type:f.type.value, category:f.category.value, detail:f.detail.value.trim(), amount:+f.amount.value.replace(/[^\d]/g,''),
-        day:Math.min(31, Math.max(1, +f.day.value||1)), member:f.member.value, payMethod:f.payMethod.value, active:f.active.value==='1'};
+        day:Math.min(31, Math.max(1, +f.day.value||1)), member:f.member.value, payMethod:f.payMethod.value, active:f.active.value==='1',
+        source:f.source.value, match:f.match.value.trim()};
       S.edit = null; ops([{op:'upsert', col:'recurring', item}], '저장했어요'); };
   }
 }
