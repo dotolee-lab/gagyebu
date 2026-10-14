@@ -838,8 +838,7 @@ function viewYear(){
   cats('saving').forEach(c => { if (S.data.entries.some(e => e.type==='saving' && e.category===c.name && cycleOf(e).startsWith(Y)))
     line('　' + c.name, m => sumWhere(m, e => e.type==='saving' && e.category===c.name)); });
   const sav = line('저축 합계', m => sumWhere(m, e => e.type==='saving'), 'sub');
-  rows.push({label:'수입 − 지출', v:months.map((_,i)=>inc[i]-exp[i]), cls:'tot'}); rows.at(-1).total = rows.at(-1).v.reduce((a,b)=>a+b,0);
-  rows.push({label:'수입 − 지출 − 저축', v:months.map((_,i)=>inc[i]-exp[i]-sav[i]), cls:'tot'}); rows.at(-1).total = rows.at(-1).v.reduce((a,b)=>a+b,0);
+  rows.push({label:'남은 돈 <span class="muted" style="font-weight:400;font-size:11px">수입 − 지출 − 저축</span>', v:months.map((_,i)=>inc[i]-exp[i]-sav[i]), cls:'tot'}); rows.at(-1).total = rows.at(-1).v.reduce((a,b)=>a+b,0);
 
   // 차트 (SVG 막대)
   const W = 860, H = 220, P = {l:56, r:8, t:10, b:24};
@@ -880,7 +879,7 @@ function viewYear(){
     <div class="tbl pc-only ytbl" style="max-height:none"><table class="year">
       <tr><th>항목</th>${months.map((_,i)=>`<th class="num">${i+1}월</th>`).join('')}<th class="num">연간</th></tr>
       ${rows.map(r => r.grp ? `<tr class="grp"><td colspan="14">${r.label}</td></tr>` :
-        `<tr class="${r.cls}"><td style="${r.cls==='sub'?'font-weight:600':''}">${r.label}</td>${r.v.map(v=>`<td class="num">${v?won(v):'<span class="muted">·</span>'}</td>`).join('')}<td class="num"><b>${won(r.total)}</b></td></tr>`).join('')}
+        `<tr class="${r.cls}"><td style="${r.cls==='sub'?'font-weight:600':''}">${r.label}</td>${r.v.map(v=>`<td class="num" style="${r.cls==='tot'&&v?(v<0?'color:var(--danger)':'color:var(--inc)'):''}">${v?won(v):'<span class="muted">·</span>'}</td>`).join('')}<td class="num" style="${r.cls==='tot'?(r.total<0?'color:var(--danger)':'color:var(--inc)'):''}"><b>${won(r.total)}</b></td></tr>`).join('')}
     </table></div>`;
   document.querySelectorAll('[data-yc]').forEach(b => b.onclick = () => { S.ycol = +b.dataset.yc; render(); });
   $('#yp').onclick = () => { S.year--; render(); }; $('#yn').onclick = () => { S.year++; render(); };
