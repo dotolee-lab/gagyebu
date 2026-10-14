@@ -97,6 +97,7 @@ svg text{fill:var(--muted2);font-size:11px}
 <div id="app"></div>
 <div class="toast" id="toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="config.js"></script>
 <script>
 'use strict';
@@ -618,9 +619,9 @@ function viewSet(){
     <div class="panel"><h2>가져오기·백업</h2>
       <div class="row" style="margin-bottom:10px"><button class="btn" id="exp-json">전체 백업 (JSON)</button><button class="btn" id="exp-csv">전체 내역 CSV</button>
         <label class="btn">백업 복원<input type="file" id="imp-json" accept=".json" hidden></label></div>
-      <p class="muted" style="margin:0 0 6px">카드사 이용내역 CSV 가져오기 — 엑셀에서 <b>이용일자, 이용가맹점, 이용금액</b> 열이 있는 시트를 CSV로 저장해 올리세요. (구분·세부내용·내용 열이 있으면 사람·메모·카테고리로 들어가요)</p>
+      <p class="muted" style="margin:0 0 6px">카드사 이용내역 가져오기 — 카드사에서 받은 <b>엑셀(xls·xlsx) 또는 CSV</b> 파일을 그대로 올리세요. <b>이용일자·가맹점·이용금액</b> 열을 자동으로 찾아요. (구분·세부내용·내용 열이 있으면 사람·메모·카테고리로 들어가요)</p>
       <div class="row"><select id="imp-pm">${st.payMethods.map(p=>`<option>${esc(p.name)}</option>`).join('')}</select>
-        <label class="btn pri">카드 내역 CSV 선택<input type="file" id="imp-csv" accept=".csv,text/csv" hidden></label></div>
+        <label class="btn pri">카드 내역 파일 선택<input type="file" id="imp-csv" accept=".xls,.xlsx,.csv,text/csv" hidden></label></div>
       <div id="imp-prev"></div></div>`;
   $('#s-save').onclick = () => { st.title = $('#s-title').value.trim() || '가계부';
     st.cycleStartDay = Math.min(28, Math.max(1, +$('#s-day').value || 1)); st.incomeUsesCycle = $('#s-inc').checked;
@@ -644,7 +645,7 @@ function viewSet(){
   $('#imp-json').onchange = async ev => { const f = ev.target.files[0]; if (!f) return;
     try { const d = JSON.parse(await f.text()); if (!confirm(`백업으로 전체를 덮어쓸까요? (내역 ${d.entries?.length||0}건)`)) return;
       await restoreAll(d); toast('복원했어요'); } catch(e){ toast('복원 실패: ' + e.message); } };
-  $('#imp-csv').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; importCardCsv(await readText(f), $('#imp-pm').value); ev.target.value=''; };
+  $('#imp-csv').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; try { importCardRows(await readRows(f), $('#imp-pm').value); } catch(e){ toast('파일을 읽지 못했어요: ' + e.message); } ev.target.value=''; };
 }
 
 // ---------- CSV ----------
@@ -667,20 +668,49 @@ function parseCsv(text){
   if (cur || row.length) { row.push(cur); rows.push(row); }
   return rows.map(r => r.map(s => s.replace(/^﻿/,'').trim())).filter(r => r.some(Boolean));
 }
-function importCardCsv(text, pm){
-  const rows = parseCsv(text);
-  const hi = rows.findIndex(r => r.some(c => /이용일|거래일|승인일|날짜/.test(c)) && r.some(c => /금액/.test(c)));
+// 엑셀(xls·xlsx, 카드사가 주는 HTML형 xls 포함)과 CSV를 모두 [행][열] 문자열 배열로
+async function readRows(file){
+  if (/\.csv$/i.test(file.name)) return parseCsv(await readText(file));
+  if (!window.XLSX) throw new Error('엑셀 읽기 모듈을 불러오지 못했어요. 새로고침 후 다시 시도하세요');
+  const wb = XLSX.read(await file.arrayBuffer(), {type:'array', cellDates:true});
+  let best = [];
+  for (const name of wb.SheetNames) {   // 이용일·금액 머리글이 있는 시트를 사용
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, raw:false, defval:'', dateNF:'yyyy-mm-dd'})
+      .map(r => r.map(c => String(c ?? '').trim())).filter(r => r.some(Boolean));
+    if (findHeader(rows) >= 0) return rows;
+    if (!best.length) best = rows;
+  }
+  return best;
+}
+const norm = s => String(s).replace(/\s+/g, '');
+const findHeader = rows => rows.findIndex(r => r.some(c => /이용일|거래일|승인일|매출일|사용일|날짜|일자/.test(norm(c))) && r.some(c => /금액/.test(norm(c))));
+function parseDate(s){
+  s = String(s || '').trim();
+  let m = s.match(/(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);                // 10/6/26 (엑셀 미국식 날짜)
+  if (m) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+  m = s.match(/^(\d{2})[.\-](\d{1,2})[.\-](\d{1,2})/);              // 26.10.01
+  if (m) return `20${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = s.match(/^(\d{4})(\d{2})(\d{2})$/);                             // 20261001
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return null;
+}
+function importCardRows(rows, pm){
+  const hi = findHeader(rows);
   if (hi < 0) return toast('이용일자·이용금액 열을 찾지 못했어요');
-  const h = rows[hi], col = re => h.findIndex(c => re.test(c));
-  const cD = col(/이용일|거래일|승인일|날짜/), cA = col(/이용금액|승인금액|금액/), cM = col(/가맹점|사용처|내용/),
+  const h = rows[hi].map(norm);
+  const col = (...res) => { for (const re of res) { const i = h.findIndex(c => re.test(c)); if (i >= 0) return i; } return -1; };
+  const cD = col(/이용일/, /매출일/, /거래일/, /승인일/, /사용일/, /날짜|일자/),
+        cA = col(/이용금액/, /승인금액/, /매출금액/, /거래금액/, /^금액/, /금액/),
+        cM = col(/가맹점/, /이용하신곳|이용처|사용처/, /^내용$/),
         cWho = col(/^구분$/), cDet = col(/세부/), cCat = h.findIndex((c,i) => /^(내용|메모|분류)$/.test(c) && i !== cM);
   const whoMap = {'공용':'s'}; set().members.forEach(m => whoMap[m.name] = m.id);
   const items = [], skipped = [];
   for (const r of rows.slice(hi+1)) {
-    const m = (r[cD]||'').match(/(\d{4})[.\-/년 ]+(\d{1,2})[.\-/월 ]+(\d{1,2})/);
+    const date = parseDate(r[cD]);
     const amt = +(r[cA]||'').replace(/[^\d-]/g,'');
-    if (!m || !amt) { skipped.push(r); continue; }
-    const date = `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    if (!date || !amt) { skipped.push(r); continue; }
     const detail = cM >= 0 ? r[cM] : '';
     const catRaw = cCat >= 0 ? (r[cCat]||'').replace(/^\d+월\s*/,'') : '';
     const category = cats('expense').some(c => c.name === catRaw) ? catRaw : (isSharedPM(pm) ? '생활비' : '기타지출');
