@@ -63,6 +63,11 @@ label.f > input,label.f > select{font-size:15px;color:var(--ink)}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
 th{font-size:12px;font-weight:600;color:var(--muted2);background:var(--panel);position:sticky;top:0}
+/* 한글이 한 글자씩 끊기지 않게: 단어 단위로만 줄바꿈, 짧은 칸은 줄바꿈 없음, 좁은 화면은 가로 스크롤 */
+table{word-break:keep-all}
+th,td.mem,td.num,td.nw,td .tag,td select{white-space:nowrap}
+.tbl > table{min-width:760px}
+.tbl td{max-width:260px}
 .tbl{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
 tr.m-h td.mem{background:var(--h)} tr.m-w td.mem{background:var(--w)} tr.m-s td.mem{background:var(--s)}
 .tag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:12px;background:var(--s)}
@@ -484,7 +489,7 @@ function viewList(){
         <td class="num" style="text-align:left">${e.date.slice(5).replace('-','.')}${e._inst?` <span class="tag" title="총 ${won(e._total)}원 ${e._inst[1]}개월 할부">할부 ${e._inst[0]}/${e._inst[1]}</span>`:e.month?' <span class="tag" title="귀속월 직접 지정">지정</span>':''}</td>
         <td>${esc(e.category)}${T==='expense'?` <span class="muted" style="font-size:11px">${esc(groupOf('expense', e.category))}</span>`:''}</td><td>${esc(e.detail)}</td>
         <td class="mem"><span>${esc(memberName(e.member))}</span></td>
-        <td>${esc(e.payMethod)}${needsSettle(e)?' <span class="tag warn">정산 전</span>':''}</td>
+        <td class="nw">${esc(e.payMethod)}${needsSettle(e)?' <span class="tag warn">정산 전</span>':''}</td>
         <td class="num t-${e.type}">${fromSharedFund(e)?'<span class="muted" title="공동생활비에서 나간 돈 — 총지출 합계엔 미포함">(공동) </span>':isPersonal(e)?'<span class="muted" title="개인이 채워 넣을 돈 — 총지출 합계엔 미포함">(개인) </span>':''}${won(e.amount)}</td>
         <td class="muted">${esc(e.memo)}</td>
         <td style="white-space:nowrap"><button class="btn sm ghost" data-e="${e.id}">수정</button><button class="btn sm ghost" data-c="${e.id}">복사</button><button class="btn sm ghost danger" data-d="${e.id}">삭제</button></td></tr>`).join('')
@@ -534,7 +539,7 @@ function viewShared(){
       <p class="muted" style="margin-top:-4px">사람·카테고리를 바로 바꿀 수 있어요. 개인 몫이면 사람을, 생활비가 아니면 카테고리를 바꾸면 이 목록에서 빠져요.</p>
       <div class="tbl" style="max-height:none;border:0"><table><tr><th>날짜</th><th>가맹점</th><th>카테고리</th><th>결제</th><th>사람</th><th class="num">금액</th><th></th></tr>
       ${list.map(e => `<tr class="m-${e.member}"><td class="num" style="text-align:left">${e.date.slice(5)}</td><td>${esc(e.detail)}${e.memo?` <span class="muted">${esc(e.memo)}</span>`:''}</td>
-        <td><select data-xc="${e.id}">${cats('expense').map(c => `<option ${c.name===e.category?'selected':''}>${esc(c.name)}</option>`).join('')}</select></td><td class="muted">${esc(e.payMethod)}</td>
+        <td><select data-xc="${e.id}">${cats('expense').map(c => `<option ${c.name===e.category?'selected':''}>${esc(c.name)}</option>`).join('')}</select></td><td class="muted nw">${esc(e.payMethod)}</td>
         <td class="mem"><select data-xm="${e.id}">${set().members.map(m=>[m.id,m.name]).concat([['s','공용']]).map(([id,n]) => `<option value="${id}" ${id===e.member?'selected':''}>${esc(n)}</option>`).join('')}</select>${e.settled?' ✓':''}</td>
         <td class="num">${won(e.amount)}</td>
         <td style="white-space:nowrap"><button class="btn sm ghost" data-xe="${e.id}">수정</button><button class="btn sm ghost danger" data-xd="${e.id}">삭제</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty">없음</td></tr>'}
