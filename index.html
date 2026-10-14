@@ -341,7 +341,7 @@ function render(){
   document.title = set().title || '가계부';
   const tabs = [['dash','이번 달'],['list','내역'],['shared','공동생활비'],['rec','고정지출'],['year','연간 결산'],['set','설정']];
   const unsettled = S.data.entries.filter(needsSettle).length;
-  $('#app').innerHTML = `<header><div class="top"><h1>${esc(set().title)}</h1><span class="switch"><a class="on">가계부</a><a href="toto.html" title="배트맨 토토 가계부 (따로 로그인)">토토</a></span>
+  $('#app').innerHTML = `<header><div class="top"><h1>${esc(set().title)}</h1><span class="switch"><a class="on">가계부</a><a href="toto.html" title="따로 로그인">도토리 방앗간</a></span>
       <span class="sync">${S.syncedAt ? '동기화 ' + S.syncedAt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : ''}
       · <a href="#" id="logout" style="color:inherit">로그아웃</a></span></div>
     <nav>${tabs.map(([k,l]) => `<button data-v="${k}" class="${S.view===k?'on':''}">${l}${k==='shared'&&unsettled?` <span class="tag warn">${unsettled}</span>`:''}</button>`).join('')}</nav></header>
