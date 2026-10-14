@@ -150,7 +150,7 @@ const DEFAULT_SETTINGS = {
       {name:'생활비',group:'변동비'},{name:'차량',group:'변동비'},{name:'경조사비',group:'변동비'},{name:'여행비',group:'변동비'},{name:'기타지출',group:'변동비'}],
     saving:[{name:'연금저축',group:'고정'},{name:'주택청약저축',group:'고정'},{name:'청년도약',group:'고정'},{name:'적금·계',group:'고정'},{name:'기타저축',group:'자유'}]},
   budgets:{},
-  payMethods:[{name:'신한',shared:false},{name:'하나',shared:false},{name:'카카오뱅크',shared:false},{name:'롯데카드',shared:false},{name:'공동생활비 카드',shared:true},{name:'현금',shared:false}],
+  payMethods:[{name:'신한',shared:false},{name:'하나',shared:false},{name:'카카오뱅크',shared:false},{name:'롯데카드(남편)',shared:false},{name:'롯데카드(아내)',shared:false},{name:'공동생활비 카드',shared:true},{name:'현금',shared:false}],
 };
 const CFG = window.GAGYEBU_CONFIG || {};
 const sb = (CFG.supabaseUrl && window.supabase) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey) : null;
@@ -158,6 +158,25 @@ const chunk = (a, n) => Array.from({length:Math.ceil(a.length/n)}, (_,i) => a.sl
 function check(res){ if (res.error) { if (res.error.code === 'PGRST301' || /JWT|auth/i.test(res.error.message)) { S.data = null; renderLogin(); throw new Error('login'); } throw new Error(res.error.message); } return res.data; }
 function normalize(d){
   if (!d.settings.budgets || Array.isArray(d.settings.budgets)) d.settings.budgets = {};
+  if (!Array.isArray(d.settings.importRules)) d.settings.importRules = [
+    {kw:'도시가스', pm:'', member:'s', category:'주거'},
+    {kw:'메리츠', pm:'', member:'h', category:'보험'},
+    {kw:'KT통신', pm:'', member:'h', category:'통신비'},
+  ];
+  // 이전 버전 설정 자동 업데이트 (한 번만)
+  const mig = d.settings.migrations = d.settings.migrations || [];
+  if (!mig.includes('v2')) {
+    const st = d.settings, name = id => (st.members.find(m => m.id === id) || {}).name || id;
+    const i = st.payMethods.findIndex(p => p.name === '롯데카드');
+    if (i >= 0) {
+      const hName = `롯데카드(${name('h')})`, wName = `롯데카드(${name('w')})`;
+      st.payMethods.splice(i, 1, {name:hName, shared:false}, {name:wName, shared:false});
+      st.importRules.forEach(r => { if (r.pm === '롯데카드') r.pm = ''; });
+    }
+    if (!st.importRules.some(r => r.kw === '관리비')) st.importRules.push({kw:'관리비', pm:'', member:'s', category:'주거'});
+    mig.push('v2'); d._migrated = true;
+  }
+  if (!d.settings.importDefault) d.settings.importDefault = {member:'s', category:'생활비'};
   return d;
 }
 async function fetchAll(){
@@ -170,7 +189,11 @@ async function fetchAll(){
   return normalize({ settings: st ? st.data : structuredClone(DEFAULT_SETTINGS),
     entries: rows.filter(r => r.col === 'entries').map(r => r.data), recurring: rows.filter(r => r.col === 'recurring').map(r => r.data) });
 }
-async function load(){ S.data = await fetchAll(); stamp(); render(); }
+async function load(){
+  S.data = await fetchAll();
+  if (S.data._migrated) { delete S.data._migrated; await sb.from('settings').upsert({id:1, data:set(), updated_at:new Date().toISOString()}); }
+  stamp(); render();
+}
 function applyLocal(list){
   for (const o of list) {
     const arr = S.data[o.col], i = arr.findIndex(x => x.id === o.item.id);
@@ -616,6 +639,21 @@ function viewSet(){
     <div class="panel"><h2>월 예산 <small>지출 카테고리별, 0이면 표시 안 함</small></h2>
       <div class="form">${cats('expense').map(c=>`<label class="f">${esc(c.name)}<input data-b="${esc(c.name)}" inputmode="numeric" value="${st.budgets[c.name]?won(st.budgets[c.name]):''}"></label>`).join('')}</div>
       <button class="btn pri" id="b-save" style="margin-top:12px">예산 저장</button></div>
+    <div class="panel"><h2>카드 내역 자동 분류 <small>가맹점 이름에 키워드가 들어가면 위에서부터 먼저 맞는 규칙을 적용</small></h2>
+      <div class="tbl" style="max-height:none;margin-bottom:10px"><table>
+        <tr><th>키워드</th><th>결제수단</th><th>사람</th><th>카테고리</th><th></th></tr>
+        ${st.importRules.map((r,i) => `<tr>
+          <td><input data-rk="${i}" value="${esc(r.kw)}" style="width:140px"></td>
+          <td><select data-rp="${i}"><option value="">전체</option>${st.payMethods.map(p=>`<option ${p.name===r.pm?'selected':''}>${esc(p.name)}</option>`).join('')}</select></td>
+          <td><select data-rm="${i}">${st.members.map(m=>[m.id,m.name]).concat([['s','공용']]).map(([id,n])=>`<option value="${id}" ${id===r.member?'selected':''}>${esc(n)}</option>`).join('')}</select></td>
+          <td><select data-rc="${i}">${cats('expense').map(c=>`<option ${c.name===r.category?'selected':''}>${esc(c.name)}</option>`).join('')}</select></td>
+          <td><button class="btn sm ghost danger" data-rx="${i}">삭제</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">규칙이 없어요</td></tr>'}
+      </table></div>
+      <div class="row" style="margin-bottom:10px"><button class="btn sm" id="r-add">+ 규칙 추가</button></div>
+      <div class="row"><span class="muted">규칙·지난 기록에 없는 가맹점은</span>
+        <select id="d-mem">${st.members.map(m=>[m.id,m.name]).concat([['s','공용']]).map(([id,n])=>`<option value="${id}" ${id===st.importDefault.member?'selected':''}>${esc(n)}</option>`).join('')}</select>
+        <select id="d-cat">${cats('expense').map(c=>`<option ${c.name===st.importDefault.category?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+        <span class="muted">로</span><button class="btn pri" id="r-save">규칙 저장</button></div></div>
     <div class="panel"><h2>가져오기·백업</h2>
       <div class="row" style="margin-bottom:10px"><button class="btn" id="exp-json">전체 백업 (JSON)</button><button class="btn" id="exp-csv">전체 내역 CSV</button>
         <label class="btn">백업 복원<input type="file" id="imp-json" accept=".json" hidden></label></div>
@@ -635,6 +673,13 @@ function viewSet(){
     st.categories[t].push({name:n, group:$('#cg-'+t).value.trim() || '기타'}); saveSettings(); });
   document.querySelectorAll('[data-pd]').forEach(b => b.onclick = () => { st.payMethods.splice(+b.dataset.pd,1); saveSettings(); });
   $('#pa').onclick = () => { const n = $('#pn').value.trim(); if (!n) return; st.payMethods.push({name:n, shared:$('#ps').checked}); saveSettings(); };
+  const readRules = () => { st.importRules = st.importRules.map((r,i) => ({kw:$(`[data-rk="${i}"]`).value.trim(), pm:$(`[data-rp="${i}"]`).value,
+      member:$(`[data-rm="${i}"]`).value, category:$(`[data-rc="${i}"]`).value})); };
+  $('#r-add').onclick = () => { readRules(); st.importRules.push({kw:'', pm:'', member:'s', category:st.importDefault.category}); render();
+    const ins = document.querySelectorAll('[data-rk]'); ins[ins.length-1].focus(); };
+  document.querySelectorAll('[data-rx]').forEach(b => b.onclick = () => { readRules(); st.importRules.splice(+b.dataset.rx, 1); saveSettings('규칙을 삭제했어요'); });
+  $('#r-save').onclick = () => { readRules(); st.importRules = st.importRules.filter(r => r.kw);
+    st.importDefault = {member:$('#d-mem').value, category:$('#d-cat').value}; saveSettings('분류 규칙을 저장했어요'); };
   $('#b-save').onclick = () => { const b = {}; document.querySelectorAll('[data-b]').forEach(i => { const v = +i.value.replace(/[^\d]/g,''); if (v) b[i.dataset.b] = v; });
     st.budgets = b; saveSettings('예산을 저장했어요'); };
   document.querySelectorAll('[data-b]').forEach(i => i.oninput = () => { const n = i.value.replace(/[^\d]/g,''); i.value = n ? (+n).toLocaleString('ko-KR') : ''; });
@@ -696,6 +741,18 @@ function parseDate(s){
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   return null;
 }
+// 가맹점 자동 분류: ① 규칙(키워드) → ② 같은 가맹점의 지난 기록 → ③ 기본값
+const kwNorm = s => String(s||'').replace(/[\s()（）㈜_\-]/g, '').replace(/주식회사/g, '').toLowerCase();
+const matchKw = (detail, kw) => kw && kwNorm(detail).includes(kwNorm(kw));
+const ruleKeyword = d => String(d||'').replace(/\(주\)|㈜|주식회사/g, '').split(/[_\s]/).filter(Boolean)[0] || d;
+function classify(detail, pm){
+  const r = (set().importRules || []).find(r => (!r.pm || r.pm === pm) && matchKw(detail, r.kw));
+  if (r) return {member:r.member, category:r.category, how:'rule'};
+  const prev = [...S.data.entries].reverse().find(e => e.type === 'expense' && e.detail && kwNorm(e.detail) === kwNorm(detail));
+  if (prev) return {member:prev.member, category:prev.category, how:'learn'};
+  const d = set().importDefault || {member:'s', category:'생활비'};
+  return {member:d.member, category:d.category, how:'base'};
+}
 function importCardRows(rows, pm){
   const hi = findHeader(rows);
   if (hi < 0) return toast('이용일자·이용금액 열을 찾지 못했어요');
@@ -713,17 +770,41 @@ function importCardRows(rows, pm){
     if (!date || !amt) { skipped.push(r); continue; }
     const detail = cM >= 0 ? r[cM] : '';
     const catRaw = cCat >= 0 ? (r[cCat]||'').replace(/^\d+월\s*/,'') : '';
-    const category = cats('expense').some(c => c.name === catRaw) ? catRaw : (isSharedPM(pm) ? '생활비' : '기타지출');
+    const auto = classify(detail, pm);
+    const category = cats('expense').some(c => c.name === catRaw) ? catRaw : auto.category;
+    const member = whoMap[r[cWho]] || auto.member;
     // 같은 날짜·금액·가맹점이 이미 있으면 건너뜀 (중복 업로드 방지)
     if (S.data.entries.some(e => e.date===date && +e.amount===amt && e.detail===detail)) { skipped.push(r); continue; }
-    items.push({id:uid(), type:'expense', date, amount:amt, category, detail, member: whoMap[r[cWho]] || 's', payMethod:pm,
+    items.push({id:uid(), type:'expense', date, amount:amt, category, detail, member, payMethod:pm, _how:auto.how,
       memo: cDet >= 0 ? r[cDet] : '', month:'', settled:false});
   }
   if (!items.length) return toast('새로 가져올 내역이 없어요');
+  const memOpts = sel => set().members.map(m => [m.id, m.name]).concat([['s','공용']]).map(([id,n]) => `<option value="${id}" ${id===sel?'selected':''}>${esc(n)}</option>`).join('');
+  const catOpts = sel => cats('expense').map(c => `<option ${c.name===sel?'selected':''}>${esc(c.name)}</option>`).join('');
+  const howTag = {rule:'규칙', learn:'지난 기록', file:'파일', base:'기본값'};
   $('#imp-prev').innerHTML = `<div style="margin-top:12px"><b>${items.length}건</b> 가져오기 (합계 ${won(items.reduce((a,e)=>a+e.amount,0))}원, 중복·빈 행 ${skipped.length}건 제외)
-    <div class="tbl" style="max-height:240px;margin:8px 0"><table>${items.slice(0,50).map(e=>`<tr><td>${e.date}</td><td>${esc(e.detail)}</td><td>${esc(memberName(e.member))}</td><td>${esc(e.category)}</td><td class="num">${won(e.amount)}</td></tr>`).join('')}</table></div>
+    <div class="muted">사람·카테고리를 고칠 수 있어요. <b>+규칙</b>을 누르면 다음부터 그 가맹점은 자동으로 같은 분류가 돼요. 체크를 끄면 가져오지 않아요.</div>
+    <div class="tbl" style="max-height:420px;margin:8px 0"><table>
+      <tr><th></th><th>날짜</th><th>가맹점</th><th>사람</th><th>카테고리</th><th class="num">금액</th><th></th></tr>
+      ${items.map((e,i)=>`<tr><td><input type="checkbox" data-ii="${i}" checked></td><td class="num" style="text-align:left">${e.date.slice(5)}</td><td>${esc(e.detail)}</td>
+      <td><select data-im="${i}">${memOpts(e.member)}</select></td><td><select data-ic="${i}">${catOpts(e.category)}</select> <span class="muted" style="font-size:11px">${howTag[e._how]||''}</span></td>
+      <td class="num">${won(e.amount)}</td><td><button class="btn sm ghost" data-ir="${i}">+규칙</button></td></tr>`).join('')}</table></div>
     <button class="btn pri" id="imp-go">가져오기</button> <button class="btn ghost" id="imp-x">취소</button></div>`;
-  $('#imp-go').onclick = () => ops(items.map(item => ({op:'upsert', col:'entries', item})), `${items.length}건을 가져왔어요`);
+  document.querySelectorAll('[data-im]').forEach(s => s.onchange = () => items[+s.dataset.im].member = s.value);
+  document.querySelectorAll('[data-ic]').forEach(s => s.onchange = () => items[+s.dataset.ic].category = s.value);
+  document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => {
+    const e = items[+b.dataset.ir];
+    const kw = prompt('가맹점 이름에 이 글자가 들어가면 같은 분류로 넣어요. 키워드를 확인하세요', ruleKeyword(e.detail));
+    if (!kw) return;
+    const rules = set().importRules.filter(r => !(r.kw === kw && (r.pm||'') === ''));
+    rules.unshift({kw, pm:'', member:e.member, category:e.category}); set().importRules = rules;
+    items.forEach((x, j) => { if (matchKw(x.detail, kw)) { x.member = e.member; x.category = e.category;
+      document.querySelector(`[data-im="${j}"]`).value = e.member; document.querySelector(`[data-ic="${j}"]`).value = e.category; } });
+    sb.from('settings').upsert({id:1, data:set(), updated_at:new Date().toISOString()}).then(() => { S.selfWrite = Date.now(); toast(`'${kw}' 규칙을 저장했어요`); });
+  });
+  $('#imp-go').onclick = () => { const pick = items.filter((_, i) => document.querySelector(`[data-ii="${i}"]`).checked).map(({_how, ...e}) => e);
+    if (!pick.length) return toast('선택된 내역이 없어요');
+    ops(pick.map(item => ({op:'upsert', col:'entries', item})), `${pick.length}건을 가져왔어요`); };
   $('#imp-x').onclick = () => $('#imp-prev').innerHTML = '';
 }
 
