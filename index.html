@@ -137,7 +137,11 @@ function cycleRange(month){
   return `${p}-${String(start).padStart(2,'0')} ~ ${month}-${String(start-1).padStart(2,'0')}`;
 }
 // 공동생활비 카드로 쓴 지출은 '공동생활비' 이체에 이미 포함되어 있으므로 총지출 합계에서 제외
-const countsInTotal = e => !(e.type === 'expense' && isSharedPM(e.payMethod));
+// 공동생활비에서 나간 지출: 공동생활비 카드로 결제했거나, '공용' + 공동생활비 카테고리(기본: 생활비)
+const fromSharedFund = e => e.type === 'expense' && e.category !== '공동생활비' &&
+  (isSharedPM(e.payMethod) || (e.member === 's' && (set().sharedFundCats || []).includes(e.category)));
+// 공동생활비로 넣은 돈에서 나간 지출은 총지출에 두 번 더하지 않음
+const countsInTotal = e => !fromSharedFund(e);
 const needsSettle = e => e.type === 'expense' && isSharedPM(e.payMethod) && e.member !== 's' && !e.settled;
 
 // ---------- 저장소 (Supabase) ----------
@@ -176,6 +180,7 @@ function normalize(d){
     if (!st.importRules.some(r => r.kw === '관리비')) st.importRules.push({kw:'관리비', pm:'', member:'s', category:'주거'});
     mig.push('v2'); d._migrated = true;
   }
+  if (!mig.includes('v3')) { if (!Array.isArray(d.settings.sharedFundCats)) d.settings.sharedFundCats = ['생활비']; mig.push('v3'); d._migrated = true; }
   if (!d.settings.importDefault) d.settings.importDefault = {member:'s', category:'생활비'};
   return d;
 }
@@ -319,7 +324,7 @@ function viewDash(){
       <span>이번 달 고정지출·고정수입 <b>${pendingRec.length}건</b>이 아직 입력되지 않았어요.</span>
       <button class="btn pri sm" id="genrec">한 번에 입력하기</button></div></div>` : ''}
     <div class="grid two">
-      <div class="panel"><h2>카테고리별 지출 <small>공동카드 사용분 포함 · 예산은 설정에서</small></h2>
+      <div class="panel"><h2>카테고리별 지출 <small>공동생활비 사용분 포함 · 예산은 설정에서</small></h2>
         ${catRows.length ? catRows.map(r => {
           const pct = r.budget ? Math.min(100, r.spent / r.budget * 100) : 0;
           return `<div class="budget-row"><span>${esc(r.name)} <span class="muted">${esc(r.group)}</span></span>
@@ -333,7 +338,7 @@ function viewDash(){
             <td class="num">${won(v.income)}</td><td class="num">${won(v.expense)}</td></tr>`).join('')}</table></div>
         <div class="panel"><h2>공동생활비</h2>
           <div class="kv"><span>이번 달 넣은 돈</span><b class="num">${won(sharedIn)}</b></div>
-          <div class="kv"><span>공동카드로 쓴 돈</span><b class="num">${won(t.sharedUse)}</b></div>
+          <div class="kv"><span>공동생활비로 쓴 돈</span><b class="num">${won(t.sharedUse)}</b></div>
           <div class="bar ${t.sharedUse>sharedIn&&sharedIn?'over':''}" style="margin:6px 0"><i style="width:${sharedIn?Math.min(100,t.sharedUse/sharedIn*100):0}%"></i></div>
           <div class="muted">남은 금액 ${won(sharedIn - t.sharedUse)}원 · 정산 대기 ${S.data.entries.filter(needsSettle).length}건</div></div>
       </div>
@@ -413,7 +418,7 @@ function viewList(){
       <select id="fc"><option value="all">모든 카테고리</option>${allCats.map(c=>`<option ${F.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select>
       <input id="fq" placeholder="검색 (가맹점, 메모)" value="${esc(F.q)}" style="flex:1;min-width:140px">
     </div>
-    <div class="muted" style="margin-bottom:8px">${list.length}건 · 수입 ${won(t.income)} · 지출 ${won(t.expense)} · 저축 ${won(t.saving)}${t.sharedUse?` · 공동카드 ${won(t.sharedUse)}`:''}</div>
+    <div class="muted" style="margin-bottom:8px">${list.length}건 · 수입 ${won(t.income)} · 지출 ${won(t.expense)} · 저축 ${won(t.saving)}${t.sharedUse?` · 공동생활비 사용 ${won(t.sharedUse)}`:''}</div>
     <div class="tbl"><table>
       <tr><th>날짜</th><th>구분</th><th>카테고리</th><th>상세</th><th>사람</th><th>결제·계좌</th><th class="num">금액</th><th>메모</th><th></th></tr>
       ${list.map(e => `<tr class="m-${e.member}">
@@ -421,7 +426,7 @@ function viewList(){
         <td class="t-${e.type}">${TYPES[e.type]}</td><td>${esc(e.category)}</td><td>${esc(e.detail)}</td>
         <td class="mem"><span>${esc(memberName(e.member))}</span></td>
         <td>${esc(e.payMethod)}${needsSettle(e)?' <span class="tag warn">정산 전</span>':''}</td>
-        <td class="num t-${e.type}">${countsInTotal(e)?'':'<span class="muted" title="공동생활비에서 지출 — 총지출 합계엔 미포함">(공동) </span>'}${won(e.amount)}</td>
+        <td class="num t-${e.type}">${countsInTotal(e)?'':'<span class="muted" title="공동생활비에서 나간 돈 — 총지출 합계엔 미포함">(공동) </span>'}${won(e.amount)}</td>
         <td class="muted">${esc(e.memo)}</td>
         <td style="white-space:nowrap"><button class="btn sm ghost" data-e="${e.id}">수정</button><button class="btn sm ghost danger" data-d="${e.id}">삭제</button></td></tr>`).join('')
         || `<tr><td colspan="9" class="empty">내역이 없어요</td></tr>`}
@@ -440,7 +445,7 @@ function viewList(){
 
 // ===== 공동생활비 =====
 function viewShared(){
-  const list = entriesOf(S.month).filter(e => e.type==='expense' && isSharedPM(e.payMethod)).sort((a,b)=>a.date.localeCompare(b.date));
+  const list = entriesOf(S.month).filter(fromSharedFund).sort((a,b)=>a.date.localeCompare(b.date));
   const sharedIn = entriesOf(S.month).filter(e => e.type==='expense' && e.category==='공동생활비').reduce((a,e)=>a + +e.amount,0);
   const used = list.reduce((a,e)=>a + +e.amount, 0);
   const pending = S.data.entries.filter(needsSettle).sort((a,b)=>a.date.localeCompare(b.date));
@@ -449,9 +454,10 @@ function viewShared(){
   $('#main').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}</div>
     <div class="grid kpis" style="margin-bottom:16px">
-      <div class="kpi"><div class="l">넣은 돈 (공동생활비)</div><div class="v">${won(sharedIn)}</div></div>
-      <div class="kpi"><div class="l">공동카드 사용</div><div class="v t-expense">${won(used)}</div><div class="s">${list.length}건</div></div>
-      <div class="kpi"><div class="l">남은 돈</div><div class="v">${won(sharedIn-used)}</div></div>
+      <div class="kpi"><div class="l">넣은 돈 (공동생활비)</div><div class="v">${won(sharedIn)}</div>
+        ${sharedIn ? '' : '<div class="s"><button class="btn sm" id="sh-in">+ 넣은 돈 입력</button></div>'}</div>
+      <div class="kpi"><div class="l">공동생활비로 쓴 돈</div><div class="v t-expense">${won(used)}</div><div class="s">${list.length}건</div></div>
+      <div class="kpi"><div class="l">남은 돈</div><div class="v" style="${sharedIn-used<0?'color:var(--danger)':''}">${won(sharedIn-used)}</div><div class="s">${sharedIn?Math.round(used/sharedIn*100)+'% 사용':''}</div></div>
     </div>
     <div class="panel"><h2>정산 대기 <small>공동카드로 결제했지만 개인 몫인 내역</small></h2>
       ${pending.length ? `<div class="row" style="margin-bottom:10px">${Object.entries(pendBy).map(([m,v]) => `<span class="tag ${m}">${esc(memberName(m))} ${won(v)}원</span>`).join('')}</div>
@@ -459,12 +465,14 @@ function viewShared(){
         <td>${esc(e.detail)}</td><td class="num">${won(e.amount)}</td><td><button class="btn sm" data-s="${e.id}">정산 완료</button></td></tr>`).join('')}</table>
       <div style="margin-top:10px">${Object.keys(pendBy).map(m => `<button class="btn sm" data-sa="${m}">${esc(memberName(m))} 전부 정산 완료</button> `).join('')}</div>`
       : '<div class="muted">정산할 내역이 없어요</div>'}</div>
-    <div class="panel"><h2>공동카드 사용 내역</h2>
-      <div class="tbl" style="max-height:none;border:0"><table><tr><th>날짜</th><th>가맹점</th><th>메모</th><th>사람</th><th class="num">금액</th></tr>
-      ${list.map(e => `<tr class="m-${e.member}"><td class="num" style="text-align:left">${e.date.slice(5)}</td><td>${esc(e.detail)}</td><td class="muted">${esc(e.memo)}</td>
-        <td class="mem">${esc(memberName(e.member))}${e.settled?' ✓':''}</td><td class="num">${won(e.amount)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">없음</td></tr>'}
+    <div class="panel"><h2>공동생활비로 쓴 내역 <small>공용 + ${esc((set().sharedFundCats||[]).join(', ') || '-')} 카테고리, 또는 공동생활비 카드 결제</small></h2>
+      <div class="tbl" style="max-height:none;border:0"><table><tr><th>날짜</th><th>가맹점</th><th>카테고리</th><th>결제</th><th>사람</th><th class="num">금액</th></tr>
+      ${list.map(e => `<tr class="m-${e.member}"><td class="num" style="text-align:left">${e.date.slice(5)}</td><td>${esc(e.detail)}</td><td>${esc(e.category)}</td><td class="muted">${esc(e.payMethod)}</td>
+        <td class="mem">${esc(memberName(e.member))}${e.settled?' ✓':''}</td><td class="num">${won(e.amount)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">없음</td></tr>'}
       </table></div></div>`;
   bindMonth();
+  if ($('#sh-in')) $('#sh-in').onclick = () => { S.view = 'list';
+    S.edit = {...newEntry('expense'), category:'공동생활비', detail:'공동생활비', amount:400000}; render(); };
   document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { const e = S.data.entries.find(x=>x.id===b.dataset.s);
     ops([{op:'upsert', col:'entries', item:{...e, settled:true}}], '정산 완료로 표시했어요'); });
   document.querySelectorAll('[data-sa]').forEach(b => b.onclick = () => {
@@ -567,7 +575,7 @@ function viewYear(){
     line(`${esc(g)} 소계`, m => sumWhere(m, e => e.type==='expense' && groupOf('expense', e.category)===g), 'sub');
   });
   const exp = line('지출 합계', m => sumWhere(m, e => e.type==='expense'), 'sub');
-  rows.push({label:'<span class="muted">(참고) 공동카드 사용</span>', v:cell(m => byMonth[m].filter(e => !countsInTotal(e)).reduce((a,e)=>a + +e.amount,0))}); rows.at(-1).total = rows.at(-1).v.reduce((a,b)=>a+b,0);
+  rows.push({label:'<span class="muted">(참고) 공동생활비로 쓴 돈</span>', v:cell(m => byMonth[m].filter(e => !countsInTotal(e)).reduce((a,e)=>a + +e.amount,0))}); rows.at(-1).total = rows.at(-1).v.reduce((a,b)=>a+b,0);
   grp('저축');
   cats('saving').forEach(c => { if (S.data.entries.some(e => e.type==='saving' && e.category===c.name && cycleOf(e).startsWith(Y)))
     line('　' + c.name, m => sumWhere(m, e => e.type==='saving' && e.category===c.name)); });
@@ -633,7 +641,11 @@ function viewSet(){
       <div class="panel"><h2>결제수단·계좌</h2>
         <div class="chips" style="margin-bottom:8px">${st.payMethods.map((p,i)=>`<span class="chip">${esc(p.name)}${p.shared?' <span class="tag">공동</span>':''}<button data-pd="${i}">×</button></span>`).join('')}</div>
         <div class="row"><input id="pn" placeholder="예: 롯데카드" style="width:150px"><label class="row muted" style="gap:4px"><input type="checkbox" id="ps"> 공동생활비 카드</label><button class="btn sm" id="pa">추가</button></div>
-        <p class="muted">'공동생활비 카드'로 결제한 지출은 이미 넣어둔 공동생활비에서 나간 돈이라 총지출에 두 번 더해지지 않아요. 결제한 사람이 개인이면 정산 대기로 잡혀요.</p></div>
+        <p class="muted">'공동생활비 카드'로 결제한 지출은 이미 넣어둔 공동생활비에서 나간 돈이라 총지출에 두 번 더해지지 않아요. 결제한 사람이 개인이면 정산 대기로 잡혀요.</p>
+        <h2 style="margin-top:16px">공동생활비에서 나가는 카테고리</h2>
+        <p class="muted" style="margin-top:-6px">어느 카드로 결제했든, 사람이 <b>공용</b>이고 아래 카테고리면 공동생활비에서 쓴 돈으로 계산해요.</p>
+        <div class="chips">${cats('expense').filter(c => c.name !== '공동생활비').map(c => `<label class="chip" style="padding-right:10px"><input type="checkbox" data-sf="${esc(c.name)}" ${(st.sharedFundCats||[]).includes(c.name)?'checked':''}> ${esc(c.name)}</label>`).join('')}</div>
+        <button class="btn pri" id="sf-save" style="margin-top:10px">저장</button></div>
     </div>
     <div class="panel"><h2>카테고리 <small>그룹은 연간 결산의 소계 단위 (고정비1, 고정비2, 변동비 …)</small></h2>${catBlock('expense')}${catBlock('income')}${catBlock('saving')}</div>
     <div class="panel"><h2>월 예산 <small>지출 카테고리별, 0이면 표시 안 함</small></h2>
@@ -673,6 +685,7 @@ function viewSet(){
     st.categories[t].push({name:n, group:$('#cg-'+t).value.trim() || '기타'}); saveSettings(); });
   document.querySelectorAll('[data-pd]').forEach(b => b.onclick = () => { st.payMethods.splice(+b.dataset.pd,1); saveSettings(); });
   $('#pa').onclick = () => { const n = $('#pn').value.trim(); if (!n) return; st.payMethods.push({name:n, shared:$('#ps').checked}); saveSettings(); };
+  $('#sf-save').onclick = () => { st.sharedFundCats = [...document.querySelectorAll('[data-sf]')].filter(i => i.checked).map(i => i.dataset.sf); saveSettings(); };
   const readRules = () => { st.importRules = st.importRules.map((r,i) => ({kw:$(`[data-rk="${i}"]`).value.trim(), pm:$(`[data-rp="${i}"]`).value,
       member:$(`[data-rm="${i}"]`).value, category:$(`[data-rc="${i}"]`).value})); };
   $('#r-add').onclick = () => { readRules(); st.importRules.push({kw:'', pm:'', member:'s', category:st.importDefault.category}); render();
