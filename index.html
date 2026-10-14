@@ -305,6 +305,8 @@ function expandInst(e){
     amount: i ? part : total - part * (n - 1), month: shiftMonth(start, i)}));
 }
 const realEntry = id => S.data.entries.find(e => e.id === String(id).split('#')[0]);
+// 저축 누적: 처음부터 upto(YYYY-MM)까지 쌓인 저축 합계
+const savingUpTo = upto => S.data.entries.filter(e => e.type === 'saving' && cycleOf(e) <= upto).reduce((a,e) => a + (+e.amount||0), 0);
 function entriesOf(month){ return S.data.entries.flatMap(expandInst).filter(e => cycleOf(e) === month); }
 function sums(list){
   const r = {income:0, expense:0, saving:0, sharedUse:0, personal:0};
@@ -375,7 +377,7 @@ function viewDash(){
     <div class="grid kpis" style="margin-bottom:16px">
       <div class="kpi"><div class="l">수입</div><div class="v t-income">${won(t.income)}</div><div class="s">${diff(t.income, prev.income)}</div></div>
       <div class="kpi"><div class="l">지출</div><div class="v t-expense">${won(t.expense)}</div><div class="s">${diff(t.expense, prev.expense)}</div></div>
-      <div class="kpi"><div class="l">저축</div><div class="v t-saving">${won(t.saving)}</div><div class="s">수입의 ${t.income?Math.round(t.saving/t.income*100):0}%</div></div>
+      <div class="kpi"><div class="l">저축</div><div class="v t-saving">${won(t.saving)}</div><div class="s">수입의 ${t.income?Math.round(t.saving/t.income*100):0}% · 누적 ${won(savingUpTo(S.month))}</div></div>
       <div class="kpi"><div class="l">남은 돈 (수입−지출−저축)</div><div class="v">${won(left)}</div><div class="s">수입−지출 ${won(t.income-t.expense)}</div></div>
     </div>
     ${pendingRec.length ? `<div class="panel" style="border-color:var(--warn)"><div class="row" style="justify-content:space-between">
@@ -534,7 +536,7 @@ function viewList(){
       <select id="fc"><option value="all">모든 카테고리</option>${cats(T).map(c=>`<option ${F.cat===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
       <input id="fq" placeholder="검색 (가맹점, 메모)" value="${esc(F.q)}" style="flex:1;min-width:140px">
     </div>
-    <div class="muted" style="margin-bottom:8px">${list.length}건 · 합계 ${won(sumOf(list.filter(countsInTotal)))}원${list.some(fromSharedFund) ? ` (공동생활비에서 쓴 ${won(sumOf(list.filter(fromSharedFund)))}원은 따로)` : ''}${list.some(isPersonal) ? ` (개인 정산 ${won(sumOf(list.filter(isPersonal)))}원은 따로)` : ''}</div>
+    <div class="muted" style="margin-bottom:8px">${list.length}건 · 합계 ${won(sumOf(list.filter(countsInTotal)))}원${T==='saving' ? ` · ${monthLabel(S.month)}까지 누적 <b>${won(savingUpTo(S.month))}원</b>` : ''}${list.some(fromSharedFund) ? ` (공동생활비에서 쓴 ${won(sumOf(list.filter(fromSharedFund)))}원은 따로)` : ''}${list.some(isPersonal) ? ` (개인 정산 ${won(sumOf(list.filter(isPersonal)))}원은 따로)` : ''}</div>
     ${mobileCards(list, {group:T==='expense'})}
     <div class="tbl pc-only"><table>
       <tr><th>날짜</th><th>카테고리</th><th>상세</th><th>${whoLabel}</th><th>${pmLabel}</th><th class="num">금액</th><th>메모</th><th></th></tr>
@@ -777,6 +779,28 @@ function viewRec(){
 }
 
 // ===== 연간 결산 =====
+// 저축 누적 표: 카테고리 > 사람별, 올해 넣은 돈과 처음부터 누적
+function savingPanel(Y){
+  const upto = `${Y}-12`, all = S.data.entries.filter(e => e.type === 'saving' && cycleOf(e) <= upto);
+  if (!all.length) return '';
+  const yr = e => cycleOf(e).startsWith(String(Y)), sum = l => l.reduce((a,e) => a + (+e.amount||0), 0);
+  const first = all.map(cycleOf).sort()[0];
+  const rows = [];
+  cats('saving').map(c => c.name).concat([...new Set(all.map(e => e.category))]).filter((c,i,a) => a.indexOf(c) === i).forEach(c => {
+    const l = all.filter(e => e.category === c); if (!l.length) return;
+    rows.push({label:c, y:sum(l.filter(yr)), t:sum(l), strong:true});
+    const who = [...new Set(l.map(e => e.member))];
+    if (who.length > 1) set().members.concat([{id:'s', name:'공용'}]).filter(m => who.includes(m.id)).forEach(m => {
+      const lm = l.filter(e => e.member === m.id); rows.push({label:`└ ${m.name}`, y:sum(lm.filter(yr)), t:sum(lm)}); });
+  });
+  return `<div class="panel"><h2>저축 누적 <small>${monthLabel(first)}부터 ${Y}년 말까지</small></h2>
+    <div class="mrow" style="font-size:12px;color:var(--muted2);padding:0 0 6px;border-bottom:1px solid var(--line)"><span>항목</span><span style="display:flex;gap:18px"><span class="num" style="min-width:90px">${Y}년</span><span class="num" style="min-width:110px">누적</span></span></div>
+    ${rows.map(r => `<div class="mrow" style="padding:${r.strong?'7px':'3px'} 0;border-bottom:1px solid var(--line);${r.strong?'':'font-size:12.5px;color:var(--muted2);padding-left:14px'}">
+      <span style="${r.strong?'font-weight:600':''}">${esc(r.label)}</span>
+      <span style="display:flex;gap:18px"><span class="num" style="min-width:90px">${r.y ? won(r.y) : '·'}</span><span class="num" style="min-width:110px;${r.strong?'font-weight:700':''}">${won(r.t)}</span></span></div>`).join('')}
+    <div class="mrow" style="padding:9px 0 2px;font-weight:700"><span>합계</span><span style="display:flex;gap:18px"><span class="num t-saving" style="min-width:90px">${won(sum(all.filter(yr)))}</span><span class="num t-saving" style="min-width:110px">${won(sum(all))}</span></span></div>
+  </div>`;
+}
 function viewYear(){
   if (S.ycol === undefined) S.ycol = Math.max(0, +(S.month||'2026-01').slice(5) - 1);
   const Y = S.year, months = Array.from({length:12}, (_,i) => ym(Y, i+1));
@@ -837,8 +861,9 @@ function viewYear(){
     <div class="grid kpis" style="margin-bottom:16px">
       <div class="kpi"><div class="l">연간 수입</div><div class="v t-income">${won(inc.reduce((a,b)=>a+b,0))}</div></div>
       <div class="kpi"><div class="l">연간 지출</div><div class="v t-expense">${won(exp.reduce((a,b)=>a+b,0))}</div></div>
-      <div class="kpi"><div class="l">연간 저축</div><div class="v t-saving">${won(sav.reduce((a,b)=>a+b,0))}</div></div>
+      <div class="kpi"><div class="l">${Y}년 저축</div><div class="v t-saving">${won(sav.reduce((a,b)=>a+b,0))}</div><div class="s">${Y}년 말까지 누적 ${won(savingUpTo(`${Y}-12`))}</div></div>
     </div>
+    ${savingPanel(Y)}
     <div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">월별 흐름</h2>
       <div class="legend"><span><i style="background:var(--inc)"></i>수입</span><span><i style="background:var(--exp)"></i>지출</span><span><i style="background:var(--sav)"></i>저축</span></div></div>
       ${chart}</div>
