@@ -765,6 +765,13 @@ function viewSet(){
         <div class="chips" style="margin-bottom:8px">${st.payMethods.map((p,i)=>`<span class="chip">${esc(p.name)}${p.shared?' <span class="tag">공동</span>':''}<button data-pd="${i}">×</button></span>`).join('')}</div>
         <div class="row"><input id="pn" placeholder="예: 롯데카드" style="width:150px"><label class="row muted" style="gap:4px"><input type="checkbox" id="ps"> 공동생활비 카드</label><button class="btn sm" id="pa">추가</button></div>
         <p class="muted">'공동생활비 카드'로 결제한 지출은 이미 넣어둔 공동생활비에서 나간 돈이라 총지출에 두 번 더해지지 않아요. 결제한 사람이 개인이면 정산 대기로 잡혀요.</p>
+        <h2 style="margin-top:16px">결제수단 한 번에 바꾸기</h2>
+        <p class="muted" style="margin-top:-6px">잘못 고른 카드를 기간을 정해서 한꺼번에 고쳐요.</p>
+        <div class="row" style="margin-bottom:6px">
+          <select id="bm-from">${st.payMethods.map(p=>`<option>${esc(p.name)}</option>`).join('')}</select><span class="muted">→</span>
+          <select id="bm-to">${st.payMethods.map(p=>`<option>${esc(p.name)}</option>`).join('')}</select></div>
+        <div class="row"><input type="date" id="bm-s" value="2026-09-01"><span class="muted">~</span><input type="date" id="bm-e" value="${today()}">
+          <button class="btn sm" id="bm-go">바꾸기</button></div>
         <h2 style="margin-top:16px">공동생활비에서 나가는 카테고리</h2>
         <p class="muted" style="margin-top:-6px">어느 카드로 결제했든, 사람이 <b>공용</b>이고 아래 카테고리면 공동생활비에서 쓴 돈으로 계산해요.</p>
         <div class="chips">${cats('expense').filter(c => c.name !== '공동생활비').map(c => `<label class="chip" style="padding-right:10px"><input type="checkbox" data-sf="${esc(c.name)}" ${(st.sharedFundCats||[]).includes(c.name)?'checked':''}> ${esc(c.name)}</label>`).join('')}</div>
@@ -811,6 +818,14 @@ function viewSet(){
     st.categories[t].push({name:n, group:$('#cg-'+t).value.trim() || '기타'}); saveSettings(); });
   document.querySelectorAll('[data-pd]').forEach(b => b.onclick = () => { st.payMethods.splice(+b.dataset.pd,1); saveSettings(); });
   $('#pa').onclick = () => { const n = $('#pn').value.trim(); if (!n) return; st.payMethods.push({name:n, shared:$('#ps').checked}); saveSettings(); };
+  $('#bm-go').onclick = () => {
+    const from = $('#bm-from').value, to = $('#bm-to').value, s0 = $('#bm-s').value, e0 = $('#bm-e').value;
+    if (from === to) return toast('바꿀 결제수단을 다르게 골라주세요');
+    const hit = S.data.entries.filter(e => e.payMethod === from && (!s0 || e.date >= s0) && (!e0 || e.date <= e0));
+    if (!hit.length) return toast('해당 기간에 그 결제수단 내역이 없어요');
+    if (confirm(`${s0 || '처음'} ~ ${e0 || '끝'} 사이 '${from}' ${hit.length}건(합계 ${won(hit.reduce((a,e)=>a + +e.amount,0))}원)을 '${to}'(으)로 바꿀까요?`))
+      ops(hit.map(e => ({op:'upsert', col:'entries', item:{...e, payMethod:to}})), `${hit.length}건의 결제수단을 바꿨어요`);
+  };
   $('#sf-save').onclick = () => { st.sharedFundCats = [...document.querySelectorAll('[data-sf]')].filter(i => i.checked).map(i => i.dataset.sf); saveSettings(); };
   const readRules = () => { st.importRules = st.importRules.map((r,i) => ({kw:$(`[data-rk="${i}"]`).value.trim(), pm:$(`[data-rp="${i}"]`).value,
       member:$(`[data-rm="${i}"]`).value, category:$(`[data-rc="${i}"]`).value})); };
