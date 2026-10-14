@@ -68,6 +68,19 @@ table{word-break:keep-all}
 th,td.mem,td.num,td.nw,td .tag,td select{white-space:nowrap}
 .tbl > table{min-width:760px}
 .tbl td{max-width:260px}
+/* 휴대폰: 표 대신 카드 목록 */
+.mlist{display:none}
+@media(max-width:700px){ .pc-only{display:none !important} .mlist{display:block} }
+.mday{display:flex;justify-content:space-between;font-size:12px;color:var(--muted2);padding:14px 4px 6px;font-weight:600}
+.mcard{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer}
+.mcard.m-h{border-left-color:#7f97cf} .mcard.m-w{border-left-color:#d8ad4c} .mcard.m-s{border-left-color:var(--muted2)}
+.mrow{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.mt{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mamt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.msub{font-size:12.5px;color:var(--muted2);margin-top:5px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+.msub select{font-size:13px;padding:4px 6px}
+.mact{display:flex;justify-content:flex-end;gap:2px;margin-top:4px}
+.mact .btn{padding:2px 8px;font-size:12.5px}
 .tbl{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
 tr.m-h td.mem{background:var(--h)} tr.m-w td.mem{background:var(--w)} tr.m-s td.mem{background:var(--s)}
 .tag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:12px;background:var(--s)}
@@ -444,6 +457,38 @@ function bindEntryForm(e){
 function newEntry(type='expense'){ return {type, date:today(), amount:0, category:cats(type)[0]?.name||'', detail:'', member:'s', payMethod:'', memo:'', month:''}; }
 
 // ===== 내역 (수입 / 지출 / 저축 탭) =====
+// 휴대폰용 카드 목록 (날짜별로 묶음). inline=true면 카테고리·사람을 바로 바꾸는 선택 칸(공동생활비 탭)
+function mobileCards(list, opt = {}){
+  if (!list.length) return '<div class="mlist"><div class="empty">내역이 없어요</div></div>';
+  const days = {}; [...list].sort((a,b) => b.date.localeCompare(a.date)).forEach(e => (days[e.date] = days[e.date] || []).push(e));
+  const wd = ds => '일월화수목금토'[new Date(ds + 'T00:00:00').getDay()];
+  const memOpts = sel => set().members.map(m => [m.id, m.name]).concat([['s','공용']]).map(([id,n]) => `<option value="${id}" ${id===sel?'selected':''}>${esc(n)}</option>`).join('');
+  return `<div class="mlist">${Object.entries(days).map(([d, es]) => `
+    <div class="mday"><span>${+d.slice(5,7)}월 ${+d.slice(8)}일 (${wd(d)})</span><span class="num">${won(es.reduce((a,e) => a + +e.amount, 0))}</span></div>
+    ${es.map(e => `<div class="mcard m-${e.member}" data-open="${e.id}">
+      <div class="mrow"><span class="mt">${esc(e.detail || e.category)}</span>
+        <span class="mamt t-${e.type}">${fromSharedFund(e) && !opt.inline ? '<span class="muted" style="font-weight:400;font-size:12px">공동 </span>' : isPersonal(e) ? '<span class="muted" style="font-weight:400;font-size:12px">개인 </span>' : ''}${won(e.amount)}</span></div>
+      <div class="msub">
+        ${opt.inline ? `<select data-xc="${e.id}">${cats('expense').map(c => `<option ${c.name===e.category?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+          <select data-xm="${e.id}">${memOpts(e.member)}</select>`
+        : `<span>${esc(e.category)}</span><span class="tag ${e.member}">${esc(memberName(e.member))}</span>`}
+        ${e.payMethod ? `<span>${esc(e.payMethod)}</span>` : ''}
+        ${e._inst ? `<span class="tag">할부 ${e._inst[0]}/${e._inst[1]}</span>` : ''}${e.month && !e._inst ? '<span class="tag">지정</span>' : ''}
+        ${needsSettle(e) ? '<span class="tag warn">정산 전</span>' : ''}
+      </div>
+      ${e.memo ? `<div class="msub">${esc(e.memo)}</div>` : ''}
+      <div class="mact">${opt.inline
+        ? `<button class="btn ghost" data-xe="${e.id}">수정</button><button class="btn ghost danger" data-xd="${e.id}">삭제</button>`
+        : `<button class="btn ghost" data-c="${e.id}">복사</button><button class="btn ghost danger" data-d="${e.id}">삭제</button>`}</div>
+    </div>`).join('')}`).join('')}</div>`;
+}
+// 카드를 누르면 수정 (버튼·선택 칸을 누른 건 제외)
+function bindCardOpen(back){
+  document.querySelectorAll('.mcard[data-open]').forEach(c => c.onclick = ev => {
+    if (ev.target.closest('button,select,a,input')) return;
+    if (back) { S.returnTo = back; S.view = 'list'; }
+    S.edit = {...realEntry(c.dataset.open)}; render(); window.scrollTo(0,0); });
+}
 function viewList(){
   const F = S.f;
   if (!TYPES[F.type]) F.type = 'expense';
@@ -483,7 +528,8 @@ function viewList(){
       <input id="fq" placeholder="검색 (가맹점, 메모)" value="${esc(F.q)}" style="flex:1;min-width:140px">
     </div>
     <div class="muted" style="margin-bottom:8px">${list.length}건 · 합계 ${won(sumOf(list.filter(countsInTotal)))}원${list.some(fromSharedFund) ? ` (공동생활비에서 쓴 ${won(sumOf(list.filter(fromSharedFund)))}원은 따로)` : ''}${list.some(isPersonal) ? ` (개인 정산 ${won(sumOf(list.filter(isPersonal)))}원은 따로)` : ''}</div>
-    <div class="tbl"><table>
+    ${mobileCards(list, {group:T==='expense'})}
+    <div class="tbl pc-only"><table>
       <tr><th>날짜</th><th>카테고리</th><th>상세</th><th>${whoLabel}</th><th>${pmLabel}</th><th class="num">금액</th><th>메모</th><th></th></tr>
       ${list.map(e => `<tr class="m-${e.member}">
         <td class="num" style="text-align:left">${e.date.slice(5).replace('-','.')}${e._inst?` <span class="tag" title="총 ${won(e._total)}원 ${e._inst[1]}개월 할부">할부 ${e._inst[0]}/${e._inst[1]}</span>`:e.month?' <span class="tag" title="귀속월 직접 지정">지정</span>':''}</td>
@@ -498,6 +544,7 @@ function viewList(){
   bindMonth();
   if (editing) bindEntryForm(editing);
   if ($('#add')) $('#add').onclick = () => { S.type = T; S.edit = 'new'; render(); };
+  bindCardOpen();
   document.querySelectorAll('[data-tt]').forEach(b => b.onclick = () => { F.type = b.dataset.tt; F.cat = 'all'; F.grp = 'all'; render(); });
   document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { F.grp = b.dataset.g; F.cat = 'all'; render(); });
   $('#fm').onchange = ev => { F.member = ev.target.value; render(); };
@@ -531,13 +578,18 @@ function viewShared(){
     </div>
     <div class="panel"><h2>정산 대기 <small>개인(정산) 카테고리 내역 · 공동생활비 카드로 결제한 개인 몫 — 각자 카드출금통장에 넣을 돈</small></h2>
       ${pending.length ? `<div class="row" style="margin-bottom:10px">${Object.entries(pendBy).map(([m,v]) => `<span class="tag ${m}">${esc(memberName(m))} ${won(v)}원</span>`).join('')}</div>
-      <table>${pending.map(e => `<tr><td class="num" style="text-align:left">${e.date}</td><td><span class="tag ${e.member}">${esc(memberName(e.member))}</span></td>
+      <div class="mlist">${pending.map(e => `<div class="mcard m-${e.member}" style="cursor:default">
+        <div class="mrow"><span class="mt">${esc(e.detail)}</span><span class="mamt">${won(e.amount)}</span></div>
+        <div class="msub"><span>${e.date.slice(5).replace('-','.')}</span><span class="tag ${e.member}">${esc(memberName(e.member))}</span><span>${esc(e.category)}</span></div>
+        <div class="mact"><button class="btn" data-s="${e.id}">정산 완료</button></div></div>`).join('')}</div>
+      <table class="pc-only">${pending.map(e => `<tr><td class="num" style="text-align:left">${e.date}</td><td><span class="tag ${e.member}">${esc(memberName(e.member))}</span></td>
         <td>${esc(e.detail)}</td><td class="num">${won(e.amount)}</td><td><button class="btn sm" data-s="${e.id}">정산 완료</button></td></tr>`).join('')}</table>
       <div style="margin-top:10px">${Object.keys(pendBy).map(m => `<button class="btn sm" data-sa="${m}">${esc(memberName(m))} 전부 정산 완료</button> `).join('')}</div>`
       : '<div class="muted">정산할 내역이 없어요</div>'}</div>
     <div class="panel"><h2>공동생활비로 쓴 내역 <small>공용 + ${esc((set().sharedFundCats||[]).join(', ') || '-')} 카테고리, 또는 공동생활비 카드 결제</small></h2>
       <p class="muted" style="margin-top:-4px">사람·카테고리를 바로 바꿀 수 있어요. 개인 몫이면 사람을, 생활비가 아니면 카테고리를 바꾸면 이 목록에서 빠져요.</p>
-      <div class="tbl" style="max-height:none;border:0"><table><tr><th>날짜</th><th>가맹점</th><th>카테고리</th><th>결제</th><th>사람</th><th class="num">금액</th><th></th></tr>
+      ${mobileCards(list, {inline:true})}
+      <div class="tbl pc-only" style="max-height:none;border:0"><table><tr><th>날짜</th><th>가맹점</th><th>카테고리</th><th>결제</th><th>사람</th><th class="num">금액</th><th></th></tr>
       ${list.map(e => `<tr class="m-${e.member}"><td class="num" style="text-align:left">${e.date.slice(5)}</td><td>${esc(e.detail)}${e.memo?` <span class="muted">${esc(e.memo)}</span>`:''}</td>
         <td><select data-xc="${e.id}">${cats('expense').map(c => `<option ${c.name===e.category?'selected':''}>${esc(c.name)}</option>`).join('')}</select></td><td class="muted nw">${esc(e.payMethod)}</td>
         <td class="mem"><select data-xm="${e.id}">${set().members.map(m=>[m.id,m.name]).concat([['s','공용']]).map(([id,n]) => `<option value="${id}" ${id===e.member?'selected':''}>${esc(n)}</option>`).join('')}</select>${e.settled?' ✓':''}</td>
@@ -546,6 +598,7 @@ function viewShared(){
       </table></div></div>`;
   bindMonth();
   const byId = realEntry;
+  bindCardOpen('shared');
   document.querySelectorAll('[data-xc]').forEach(s => s.onchange = () => { const e = byId(s.dataset.xc);
     const who = groupOf('expense', s.value) === PERSONAL_GROUP && personOfCat(s.value);
     ops([{op:'upsert', col:'entries', item:{...e, category:s.value, member: who || e.member, settled:false}}], who ? '정산 대기로 옮겼어요' : '카테고리를 바꿨어요'); });
