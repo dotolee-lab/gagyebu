@@ -214,6 +214,14 @@ async function load(){
   S.data = await fetchAll();
   if (S.data._migrated) { delete S.data._migrated; await sb.from('settings').upsert({id:1, data:set(), updated_at:new Date().toISOString()}); }
   stamp(); render();
+  // 예전에 메모로만 남긴 "(N개월 할부)"를 할부로 바꾸기 (한 번만)
+  const mig = set().migrations || (set().migrations = []);
+  if (!mig.includes('v6')) {
+    mig.push('v6'); await sb.from('settings').upsert({id:1, data:set(), updated_at:new Date().toISOString()});
+    const fix = S.data.entries.filter(e => e.type === 'expense' && !e.installments && /\(\s*\d+\s*개월\s*할부\s*\)/.test(e.memo || ''))
+      .map(e => ({op:'upsert', col:'entries', item:{...e, installments: +/(\d+)\s*개월/.exec(e.memo)[1]}}));
+    if (fix.length) await ops(fix, `할부 ${fix.length}건을 매달 나눠서 계산하도록 바꿨어요`);
+  }
 }
 function applyLocal(list){
   for (const o of list) {
@@ -265,7 +273,16 @@ function onRemote(){
 document.addEventListener('visibilitychange', () => pull());
 
 // ---------- 집계 ----------
-function entriesOf(month){ return S.data.entries.filter(e => cycleOf(e) === month); }
+// 할부: 한 건을 개월수만큼 매달 나눠서 계산 (첫 달에 나머지 원 단위 포함). 실제 기록은 한 건이에요.
+function expandInst(e){
+  const n = +e.installments || 1;
+  if (n <= 1 || e.type !== 'expense') return [e];
+  const start = cycleOf(e), total = +e.amount || 0, part = Math.floor(total / n);
+  return Array.from({length:n}, (_, i) => ({...e, id:`${e.id}#${i+1}`, _parent:e.id, _inst:[i+1, n], _total:total,
+    amount: i ? part : total - part * (n - 1), month: shiftMonth(start, i)}));
+}
+const realEntry = id => S.data.entries.find(e => e.id === String(id).split('#')[0]);
+function entriesOf(month){ return S.data.entries.flatMap(expandInst).filter(e => cycleOf(e) === month); }
 function sums(list){
   const r = {income:0, expense:0, saving:0, sharedUse:0, personal:0};
   for (const e of list){
@@ -383,6 +400,7 @@ function entryForm(e){
       <label class="f">${type==='expense'?'결제수단':'계좌'}<select name="payMethod"><option value="">-</option>${set().payMethods.map(p => `<option ${p.name===e.payMethod?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
       <label class="f">메모<input name="memo" value="${esc(e.memo)}"></label>
       <label class="f">귀속월 (비우면 자동)<input type="month" name="month" value="${esc(e.month||'')}"></label>
+      ${type === 'expense' ? `<label class="f">할부<select name="inst">${[1,2,3,4,5,6,7,8,9,10,11,12,18,24,36].map(n => `<option value="${n}" ${(+e.installments||1)===n?'selected':''}>${n===1?'일시불':n+'개월'}</option>`).join('')}</select></label>` : ''}
     </div>
     <datalist id="detail-list">${[...new Set(S.data.entries.filter(x=>x.type===type).map(x=>x.detail).filter(Boolean))].slice(-200).map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
     <div class="row" style="margin-top:12px;justify-content:space-between">
@@ -408,6 +426,7 @@ function bindEntryForm(e){
   f.onsubmit = ev => { ev.preventDefault();
     const item = {...e, date:f.date.value, amount:+f.amount.value.replace(/[^\d]/g,''), category:f.category.value,
       detail:f.detail.value.trim(), member:f.member.value, payMethod:f.payMethod.value, memo:f.memo.value.trim(), month:f.month.value};
+    if (f.inst && +f.inst.value > 1) item.installments = +f.inst.value; else delete item.installments;
     if (!item.amount) return toast('금액을 입력하세요');
     delete item._copy;
     const isNew = !item.id; if (isNew) item.id = uid();
@@ -462,7 +481,7 @@ function viewList(){
     <div class="tbl"><table>
       <tr><th>날짜</th><th>카테고리</th><th>상세</th><th>${whoLabel}</th><th>${pmLabel}</th><th class="num">금액</th><th>메모</th><th></th></tr>
       ${list.map(e => `<tr class="m-${e.member}">
-        <td class="num" style="text-align:left">${e.date.slice(5).replace('-','.')}${e.month?' <span class="tag" title="귀속월 직접 지정">지정</span>':''}</td>
+        <td class="num" style="text-align:left">${e.date.slice(5).replace('-','.')}${e._inst?` <span class="tag" title="총 ${won(e._total)}원 ${e._inst[1]}개월 할부">할부 ${e._inst[0]}/${e._inst[1]}</span>`:e.month?' <span class="tag" title="귀속월 직접 지정">지정</span>':''}</td>
         <td>${esc(e.category)}${T==='expense'?` <span class="muted" style="font-size:11px">${esc(groupOf('expense', e.category))}</span>`:''}</td><td>${esc(e.detail)}</td>
         <td class="mem"><span>${esc(memberName(e.member))}</span></td>
         <td>${esc(e.payMethod)}${needsSettle(e)?' <span class="tag warn">정산 전</span>':''}</td>
@@ -481,12 +500,12 @@ function viewList(){
   $('#fq').oninput = ev => { F.q = ev.target.value; clearTimeout(S._q); S._q = setTimeout(() => { render(); const i=$('#fq'); i.focus(); i.setSelectionRange(i.value.length,i.value.length); }, 300); };
   // 복사: 같은 내용으로 다음 달 날짜의 새 입력창 열기 (◀ ▶로 달 조정)
   document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => {
-    const { id, recurringId, updatedAt, settled, ...rest } = S.data.entries.find(e => e.id === b.dataset.c);
+    const { id, recurringId, updatedAt, settled, ...rest } = realEntry(b.dataset.c);
     S.edit = {...rest, _copy:true, settled:false, memo: /엑셀 가계부에서 옮김|^휴일이라/.test(rest.memo || '') ? '' : rest.memo, date: addMonths(rest.date, 1), month: rest.month ? shiftMonth(rest.month, 1) : ''};
     render(); window.scrollTo(0,0); });
-  document.querySelectorAll('[data-e]').forEach(b => b.onclick = () => { S.edit = {...S.data.entries.find(e=>e.id===b.dataset.e)}; render(); window.scrollTo(0,0); });
-  document.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const e = S.data.entries.find(x=>x.id===b.dataset.d);
-    if (confirm(`${e.date} ${e.detail||e.category} ${won(e.amount)}원을 삭제할까요?`)) ops([{op:'delete', col:'entries', item:{id:e.id}}], '삭제했어요'); });
+  document.querySelectorAll('[data-e]').forEach(b => b.onclick = () => { S.edit = {...realEntry(b.dataset.e)}; render(); window.scrollTo(0,0); });
+  document.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const e = realEntry(b.dataset.d);
+    if (confirm(`${e.date} ${e.detail||e.category} ${won(e.amount)}원을 삭제할까요?${+e.installments > 1 ? ` (${e.installments}개월 할부 전체가 지워져요)` : ''}`)) ops([{op:'delete', col:'entries', item:{id:e.id}}], '삭제했어요'); });
 }
 
 // ===== 공동생활비 =====
@@ -521,7 +540,7 @@ function viewShared(){
         <td style="white-space:nowrap"><button class="btn sm ghost" data-xe="${e.id}">수정</button><button class="btn sm ghost danger" data-xd="${e.id}">삭제</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty">없음</td></tr>'}
       </table></div></div>`;
   bindMonth();
-  const byId = id => S.data.entries.find(x => x.id === id);
+  const byId = realEntry;
   document.querySelectorAll('[data-xc]').forEach(s => s.onchange = () => { const e = byId(s.dataset.xc);
     const who = groupOf('expense', s.value) === PERSONAL_GROUP && personOfCat(s.value);
     ops([{op:'upsert', col:'entries', item:{...e, category:s.value, member: who || e.member, settled:false}}], who ? '정산 대기로 옮겼어요' : '카테고리를 바꿨어요'); });
@@ -971,7 +990,7 @@ function importCardRows(rows, pm){
   const cD = col(/이용일/, /매출일/, /거래일/, /승인일/, /사용일/, /날짜|일자/),
         cA = col(/이용금액/, /승인금액/, /매출금액/, /거래금액/, /^금액/, /금액/),
         cM = col(/가맹점/, /이용하신곳|이용처|사용처/, /^내용$/),
-        cWho = col(/^구분$/), cDet = col(/세부/), cCat = h.findIndex((c,i) => /^(내용|메모|분류)$/.test(c) && i !== cM);
+        cWho = col(/^구분$/), cDet = col(/세부/), cInst = col(/할부개월|할부기간/), cCat = h.findIndex((c,i) => /^(내용|메모|분류)$/.test(c) && i !== cM);
   const whoMap = {'공용':'s'}; set().members.forEach(m => whoMap[m.name] = m.id);
   const items = [], skipped = [];
   for (const r of rows.slice(hi+1)) {
@@ -986,7 +1005,7 @@ function importCardRows(rows, pm){
     // 같은 날짜·금액·가맹점이 이미 있으면 건너뜀 (중복 업로드 방지)
     if (S.data.entries.some(e => e.date===date && +e.amount===amt && e.detail===detail)) { skipped.push(r); continue; }
     items.push({id:uid(), type:'expense', date, amount:amt, category, detail, member, payMethod:pm, _how:auto.how,
-      memo: cDet >= 0 ? r[cDet] : '', month:'', settled:false});
+      memo: cDet >= 0 ? r[cDet] : '', month:'', settled:false, ...((n => n > 1 ? {installments:n} : {})(cInst >= 0 ? +(String(r[cInst]).match(/\d+/) || [0])[0] : 0))});
   }
   if (!items.length) return toast('새로 가져올 내역이 없어요');
   const memOpts = sel => set().members.map(m => [m.id, m.name]).concat([['s','공용']]).map(([id,n]) => `<option value="${id}" ${id===sel?'selected':''}>${esc(n)}</option>`).join('');
