@@ -103,7 +103,7 @@ svg text{fill:var(--muted2);font-size:11px}
 'use strict';
 const TYPES = {income:'수입', expense:'지출', saving:'저축'};
 const S = { data:null, view:'dash', month:null, year:null, type:'expense', edit:null,
-  f:{type:'all', member:'all', cat:'all', q:'', unsettled:false}, syncing:false };
+  f:{type:'expense', grp:'all', member:'all', cat:'all', q:'', unsettled:false}, syncing:false };
 
 // ---------- 유틸 ----------
 const $ = s => document.querySelector(s);
@@ -149,8 +149,8 @@ const DEFAULT_SETTINGS = {
   title:'우리집 가계부', members:[{id:'h',name:'남편'},{id:'w',name:'아내'}], cycleStartDay:25, incomeUsesCycle:false,
   categories:{
     income:[{name:'월급',group:'고정수익'},{name:'기타소득',group:'부업'},{name:'시간외',group:'부업'},{name:'기타수입',group:'기타'}],
-    expense:[{name:'용돈',group:'고정비1'},{name:'공동생활비',group:'고정비1'},{name:'가족비',group:'고정비1'},
-      {name:'보험',group:'고정비2'},{name:'구독',group:'고정비2'},{name:'통신비',group:'고정비2'},{name:'주거',group:'고정비2'},{name:'교통비',group:'고정비2'},
+    expense:[{name:'용돈',group:'고정비(용돈·생활비)'},{name:'공동생활비',group:'고정비(용돈·생활비)'},{name:'가족비',group:'고정비(용돈·생활비)'},
+      {name:'보험',group:'고정비(주거·보험·통신)'},{name:'구독',group:'고정비(주거·보험·통신)'},{name:'통신비',group:'고정비(주거·보험·통신)'},{name:'주거',group:'고정비(주거·보험·통신)'},{name:'교통비',group:'고정비(주거·보험·통신)'},
       {name:'생활비',group:'변동비'},{name:'차량',group:'변동비'},{name:'경조사비',group:'변동비'},{name:'여행비',group:'변동비'},{name:'기타지출',group:'변동비'}],
     saving:[{name:'연금저축',group:'고정'},{name:'주택청약저축',group:'고정'},{name:'청년도약',group:'고정'},{name:'적금·계',group:'고정'},{name:'기타저축',group:'자유'}]},
   budgets:{},
@@ -180,6 +180,10 @@ function normalize(d){
     if (!st.importRules.some(r => r.kw === '관리비')) st.importRules.push({kw:'관리비', pm:'', member:'s', category:'주거'});
     mig.push('v2'); d._migrated = true;
   }
+  if (!mig.includes('v4')) {   // 그룹 이름 변경: 고정비1 → 고정비(용돈·생활비), 고정비2 → 고정비(주거·보험·통신)
+    const ren = {'고정비1':'고정비(용돈·생활비)', '고정비2':'고정비(주거·보험·통신)'};
+    d.settings.categories.expense.forEach(c => { if (ren[c.group]) c.group = ren[c.group]; });
+    mig.push('v4'); d._migrated = true; }
   if (!mig.includes('v3')) { if (!Array.isArray(d.settings.sharedFundCats)) d.settings.sharedFundCats = ['생활비']; mig.push('v3'); d._migrated = true; }
   if (!d.settings.importDefault) d.settings.importDefault = {member:'s', category:'생활비'};
   return d;
@@ -392,50 +396,69 @@ function bindEntryForm(e){
     const isNew = !item.id; if (isNew) item.id = uid();
     S.edit = isNew && !S.returnTo ? {...newEntry(item.type), date:item.date, member:item.member, payMethod:item.payMethod, category:item.category} : null;
     if (S.returnTo) { S.view = S.returnTo; S.returnTo = null; }
+    if (TYPES[item.type]) S.f.type = item.type;
     ops([{op:'upsert', col:'entries', item}], isNew ? '추가했어요' : '수정했어요');
   };
 }
 function newEntry(type='expense'){ return {type, date:today(), amount:0, category:cats(type)[0]?.name||'', detail:'', member:'s', payMethod:'', memo:'', month:''}; }
 
-// ===== 내역 =====
+// ===== 내역 (수입 / 지출 / 저축 탭) =====
 function viewList(){
   const F = S.f;
-  let list = entriesOf(S.month);
-  if (F.type!=='all') list = list.filter(e => e.type===F.type);
+  if (!TYPES[F.type]) F.type = 'expense';
+  const T = F.type;
+  const monthAll = entriesOf(S.month);
+  const tabSum = t => monthAll.filter(e => e.type === t);
+  let list = tabSum(T);
+  // 지출 탭의 그룹 칩: 고정비1 / 고정비2 / 변동비 … / 공동생활비 사용
+  const expGroups = [...new Set(cats('expense').map(c => c.group))];
+  if (T === 'expense' && F.grp && F.grp !== 'all') list = F.grp === '__shared' ? list.filter(e => !countsInTotal(e)) : list.filter(e => groupOf('expense', e.category) === F.grp && countsInTotal(e));
   if (F.member!=='all') list = list.filter(e => e.member===F.member);
   if (F.cat!=='all') list = list.filter(e => e.category===F.cat);
   if (F.q) { const q = F.q.toLowerCase(); list = list.filter(e => [e.detail,e.memo,e.category,e.payMethod].join(' ').toLowerCase().includes(q)); }
   list.sort((a,b) => b.date.localeCompare(a.date) || (b.updatedAt||'').localeCompare(a.updatedAt||''));
-  const t = sums(list);
-  const editing = S.edit === 'new' ? newEntry(S.type) : S.edit;
-  const allCats = [...new Set(Object.values(set().categories).flat().map(c=>c.name))];
+  const sumOf = l => l.reduce((a,e) => a + (+e.amount||0), 0);
+  const editing = S.edit === 'new' ? newEntry(T) : S.edit;
+  const whoLabel = {income:'받는 사람', expense:'사람', saving:'계좌주'}[T];
+  const pmLabel = T === 'expense' ? '결제' : '계좌';
+  const tabTotal = t => { const l = tabSum(t); return t === 'expense' ? sumOf(l.filter(countsInTotal)) : sumOf(l); };
+  const exp = tabSum('expense');
+  const grpChips = T !== 'expense' ? '' : `<div class="chips" style="margin-bottom:10px">
+      ${[['all','전체', sumOf(exp.filter(countsInTotal))], ...expGroups.map(g => [g, g, sumOf(exp.filter(e => countsInTotal(e) && groupOf('expense', e.category) === g))]),
+         ['__shared','공동생활비 사용', sumOf(exp.filter(e => !countsInTotal(e)))]]
+        .map(([k,l,v]) => `<button class="chip" data-g="${esc(k)}" style="cursor:pointer;padding:4px 12px;${(F.grp||'all')===k?'background:var(--ink);color:var(--bg);border-color:var(--ink)':''}">${esc(l)} <b class="num">${won(v)}</b></button>`).join('')}
+    </div>`;
   $('#main').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}
-      ${editing ? '' : '<button class="btn pri" id="add">+ 내역 입력</button>'}</div>
+      ${editing ? '' : `<button class="btn pri" id="add">+ ${TYPES[T]} 입력</button>`}</div>
     ${editing ? entryForm(editing) : ''}
+    <div class="seg" style="margin-bottom:12px;display:flex;max-width:520px">
+      ${['expense','income','saving'].map(t => `<button data-tt="${t}" class="${T===t?'on':''}" style="flex:1;padding:9px 10px">${TYPES[t]} <span style="opacity:.75" class="num">${won(tabTotal(t))}</span></button>`).join('')}
+    </div>
+    ${grpChips}
     <div class="row" style="margin-bottom:10px">
-      <select id="ft"><option value="all">전체</option>${Object.entries(TYPES).map(([k,l])=>`<option value="${k}" ${F.type===k?'selected':''}>${l}</option>`).join('')}</select>
       <select id="fm"><option value="all">모든 사람</option>${set().members.concat([{id:'s',name:'공용'}]).map(m=>`<option value="${m.id}" ${F.member===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select>
-      <select id="fc"><option value="all">모든 카테고리</option>${allCats.map(c=>`<option ${F.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select>
+      <select id="fc"><option value="all">모든 카테고리</option>${cats(T).map(c=>`<option ${F.cat===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
       <input id="fq" placeholder="검색 (가맹점, 메모)" value="${esc(F.q)}" style="flex:1;min-width:140px">
     </div>
-    <div class="muted" style="margin-bottom:8px">${list.length}건 · 수입 ${won(t.income)} · 지출 ${won(t.expense)} · 저축 ${won(t.saving)}${t.sharedUse?` · 공동생활비 사용 ${won(t.sharedUse)}`:''}</div>
+    <div class="muted" style="margin-bottom:8px">${list.length}건 · 합계 ${won(sumOf(list.filter(countsInTotal)))}원${list.some(e => !countsInTotal(e)) ? ` (공동생활비에서 쓴 ${won(sumOf(list.filter(e => !countsInTotal(e))))}원은 따로)` : ''}</div>
     <div class="tbl"><table>
-      <tr><th>날짜</th><th>구분</th><th>카테고리</th><th>상세</th><th>사람</th><th>결제·계좌</th><th class="num">금액</th><th>메모</th><th></th></tr>
+      <tr><th>날짜</th><th>카테고리</th><th>상세</th><th>${whoLabel}</th><th>${pmLabel}</th><th class="num">금액</th><th>메모</th><th></th></tr>
       ${list.map(e => `<tr class="m-${e.member}">
         <td class="num" style="text-align:left">${e.date.slice(5).replace('-','.')}${e.month?' <span class="tag" title="귀속월 직접 지정">지정</span>':''}</td>
-        <td class="t-${e.type}">${TYPES[e.type]}</td><td>${esc(e.category)}</td><td>${esc(e.detail)}</td>
+        <td>${esc(e.category)}${T==='expense'?` <span class="muted" style="font-size:11px">${esc(groupOf('expense', e.category))}</span>`:''}</td><td>${esc(e.detail)}</td>
         <td class="mem"><span>${esc(memberName(e.member))}</span></td>
         <td>${esc(e.payMethod)}${needsSettle(e)?' <span class="tag warn">정산 전</span>':''}</td>
         <td class="num t-${e.type}">${countsInTotal(e)?'':'<span class="muted" title="공동생활비에서 나간 돈 — 총지출 합계엔 미포함">(공동) </span>'}${won(e.amount)}</td>
         <td class="muted">${esc(e.memo)}</td>
         <td style="white-space:nowrap"><button class="btn sm ghost" data-e="${e.id}">수정</button><button class="btn sm ghost danger" data-d="${e.id}">삭제</button></td></tr>`).join('')
-        || `<tr><td colspan="9" class="empty">내역이 없어요</td></tr>`}
+        || `<tr><td colspan="8" class="empty">${TYPES[T]} 내역이 없어요</td></tr>`}
     </table></div>`;
   bindMonth();
   if (editing) bindEntryForm(editing);
-  if ($('#add')) $('#add').onclick = () => { S.edit = 'new'; render(); };
-  $('#ft').onchange = ev => { F.type = ev.target.value; render(); };
+  if ($('#add')) $('#add').onclick = () => { S.type = T; S.edit = 'new'; render(); };
+  document.querySelectorAll('[data-tt]').forEach(b => b.onclick = () => { F.type = b.dataset.tt; F.cat = 'all'; F.grp = 'all'; render(); });
+  document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { F.grp = b.dataset.g; F.cat = 'all'; render(); });
   $('#fm').onchange = ev => { F.member = ev.target.value; render(); };
   $('#fc').onchange = ev => { F.cat = ev.target.value; render(); };
   $('#fq').oninput = ev => { F.q = ev.target.value; clearTimeout(S._q); S._q = setTimeout(() => { render(); const i=$('#fq'); i.focus(); i.setSelectionRange(i.value.length,i.value.length); }, 300); };
@@ -580,7 +603,7 @@ function viewRec(){
         <td>${esc(c.detail)} <span class="muted">${c.count}회</span></td><td>${esc(c.category)}</td><td class="mem">${esc(memberName(c.member))}</td><td>${c.day}일</td><td class="num">${won(c.amount)}</td>
         <td><select data-cs="${i}"><option value="manual" ${c.source==='manual'?'selected':''}>자동 입력</option><option value="card" ${c.source==='card'?'selected':''}>카드내역</option></select></td></tr>`).join('')}
       </table></div><div class="row" style="margin-top:10px"><button class="btn pri" id="ci-go">체크한 항목 등록</button><button class="btn ghost" id="ci-x">닫기</button></div>`
-      : `<div class="muted">새로 찾은 고정항목이 없어요. 고정비1·고정비2 카테고리 내역이 쌓이면 여기서 찾아요.</div><button class="btn ghost" id="ci-x">닫기</button>`}</div>` : ''}
+      : `<div class="muted">새로 찾은 고정항목이 없어요. 고정비 그룹 카테고리 내역이 쌓이면 여기서 찾아요.</div><button class="btn ghost" id="ci-x">닫기</button>`}</div>` : ''}
     ${e ? `<form id="rf" class="panel"><h2>${e.id?'고정항목 수정':'고정항목 추가'}</h2><div class="form">
       <label class="f">구분<select name="type">${Object.entries(TYPES).map(([k,l])=>`<option value="${k}" ${e.type===k?'selected':''}>${l}</option>`).join('')}</select></label>
       <label class="f">카테고리<select name="category">${cats(e.type).map(c=>`<option ${c.name===e.category?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
@@ -711,7 +734,7 @@ function viewSet(){
   const st = set();
   const catBlock = type => `<div style="margin-bottom:14px"><b>${TYPES[type]}</b>
     <div class="chips" style="margin:6px 0">${cats(type).map((c,i) => `<span class="chip">${esc(c.name)} <span class="muted">${esc(c.group)}</span><button data-cd="${type}:${i}" title="삭제">×</button></span>`).join('')}</div>
-    <div class="row"><input placeholder="새 카테고리" id="cn-${type}" style="width:130px"><input placeholder="그룹 (예: 고정비2)" id="cg-${type}" style="width:170px" list="grp-${type}">
+    <div class="row"><input placeholder="새 카테고리" id="cn-${type}" style="width:130px"><input placeholder="그룹 (예: 변동비)" id="cg-${type}" style="width:170px" list="grp-${type}">
     <datalist id="grp-${type}">${[...new Set(cats(type).map(c=>c.group))].map(g=>`<option value="${esc(g)}">`).join('')}</datalist>
     <button class="btn sm" data-ca="${type}">추가</button></div></div>`;
   $('#main').innerHTML = `
@@ -733,7 +756,7 @@ function viewSet(){
         <div class="chips">${cats('expense').filter(c => c.name !== '공동생활비').map(c => `<label class="chip" style="padding-right:10px"><input type="checkbox" data-sf="${esc(c.name)}" ${(st.sharedFundCats||[]).includes(c.name)?'checked':''}> ${esc(c.name)}</label>`).join('')}</div>
         <button class="btn pri" id="sf-save" style="margin-top:10px">저장</button></div>
     </div>
-    <div class="panel"><h2>카테고리 <small>그룹은 연간 결산의 소계 단위 (고정비1, 고정비2, 변동비 …)</small></h2>${catBlock('expense')}${catBlock('income')}${catBlock('saving')}</div>
+    <div class="panel"><h2>카테고리 <small>그룹은 연간 결산의 소계 단위 (고정비(용돈·생활비), 고정비(주거·보험·통신), 변동비 …)</small></h2>${catBlock('expense')}${catBlock('income')}${catBlock('saving')}</div>
     <div class="panel"><h2>월 예산 <small>지출 카테고리별, 0이면 표시 안 함</small></h2>
       <div class="form">${cats('expense').map(c=>`<label class="f">${esc(c.name)}<input data-b="${esc(c.name)}" inputmode="numeric" value="${st.budgets[c.name]?won(st.budgets[c.name]):''}"></label>`).join('')}</div>
       <button class="btn pri" id="b-save" style="margin-top:12px">예산 저장</button></div>
