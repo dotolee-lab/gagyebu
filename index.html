@@ -80,6 +80,7 @@ tr.m-h td.mem{background:var(--h)} tr.m-w td.mem{background:var(--w)} tr.m-s td.
 .year td,.year th{padding:5px 7px;font-size:13px}
 .year .grp td{background:var(--s);font-weight:600}
 .year .tot td{font-weight:700;border-top:2px solid var(--ink)}
+.year .mem td{font-size:12px;color:var(--muted2);padding-top:3px;padding-bottom:3px}
 .year td:first-child,.year th:first-child{position:sticky;left:0;background:var(--panel);z-index:1}
 .year .grp td:first-child{background:var(--s)}
 .login{max-width:340px;margin:16vh auto;padding:24px}
@@ -691,8 +692,14 @@ function viewYear(){
   const expGroups = [...new Set(cats('expense').map(c => c.group))].filter(g => g !== PERSONAL_GROUP);
   expGroups.forEach(g => {
     cats('expense').filter(c => c.group===g).forEach(c => {
-      if (S.data.entries.some(e => e.type==='expense' && e.category===c.name && countsInTotal(e) && cycleOf(e).startsWith(Y)))
-        line(`　${c.name} <span class="muted">${esc(g)}</span>`, m => sumWhere(m, e => e.type==='expense' && e.category===c.name)); });
+      const inYear = S.data.entries.filter(e => e.type==='expense' && e.category===c.name && countsInTotal(e) && cycleOf(e).startsWith(String(Y)));
+      if (!inYear.length) return;
+      line(`　${c.name} <span class="muted">${esc(g)}</span>`, m => sumWhere(m, e => e.type==='expense' && e.category===c.name));
+      // 두 사람 이상이 쓴 카테고리는 사람별로 나눠서 (용돈: 동현 / 보미)
+      const who = [...new Set(inYear.map(e => e.member))];
+      if (who.length > 1) set().members.concat([{id:'s', name:'공용'}]).filter(mb => who.includes(mb.id)).forEach(mb =>
+        line(`<span class="muted">　　└ ${esc(mb.name)}</span>`, m => sumWhere(m, e => e.type==='expense' && e.category===c.name && e.member===mb.id), 'mem'));
+    });
     line(`${esc(g)} 소계`, m => sumWhere(m, e => e.type==='expense' && groupOf('expense', e.category)===g), 'sub');
   });
   const exp = line('지출 합계', m => sumWhere(m, e => e.type==='expense'), 'sub');
