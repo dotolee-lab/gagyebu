@@ -114,6 +114,8 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
 const ym = (y, m) => `${y}-${String(m).padStart(2,'0')}`;
 const shiftMonth = (s, k) => { let [y,m] = s.split('-').map(Number); m += k; while(m>12){m-=12;y++} while(m<1){m+=12;y--} return ym(y,m); };
+const addMonths = (ds, k) => { const [y,m,d] = ds.split('-').map(Number); const t = shiftMonth(ym(y,m), k); const [ty,tm] = t.split('-').map(Number);
+  return `${t}-${String(Math.min(d, new Date(ty, tm, 0).getDate())).padStart(2,'0')}`; };
 const monthLabel = s => { const [y,m] = s.split('-'); return `${y}년 ${+m}월`; };
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2200); }
 const set = () => S.data.settings;
@@ -371,7 +373,7 @@ function entryForm(e){
   return `<form id="ef" class="panel">
     <div class="row" style="justify-content:space-between;margin-bottom:12px">
       <div class="seg">${Object.entries(TYPES).map(([k,l]) => `<button type="button" data-t="${k}" class="${type===k?'on':''}">${l}</button>`).join('')}</div>
-      <span class="muted">${e.id ? '수정 중' : '새 내역'}</span></div>
+      <span class="muted">${e.id ? '수정 중' : e._copy ? '복사한 내역 — 날짜·금액 확인 후 추가하세요' : '새 내역'}</span></div>
     <div class="form">
       <label class="f">날짜<input type="date" name="date" value="${esc(e.date)}" required></label>
       <label class="f">금액<input name="amount" inputmode="numeric" value="${e.amount?won(e.amount):''}" placeholder="0" required></label>
@@ -384,7 +386,7 @@ function entryForm(e){
     </div>
     <datalist id="detail-list">${[...new Set(S.data.entries.filter(x=>x.type===type).map(x=>x.detail).filter(Boolean))].slice(-200).map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
     <div class="row" style="margin-top:12px;justify-content:space-between">
-      <span class="muted" id="cyc"></span>
+      <span class="row" style="gap:6px"><button type="button" class="btn sm" id="d-prev">◀ 한 달</button><button type="button" class="btn sm" id="d-next">한 달 ▶</button><span class="muted" id="cyc"></span></span>
       <div class="row"><button type="button" class="btn ghost" id="ecancel">취소</button><button class="btn pri">${e.id?'수정 저장':'추가'}</button></div></div>
   </form>`;
 }
@@ -393,6 +395,8 @@ function bindEntryForm(e){
   const upd = () => { const tmp = {type:e.type, date:f.date.value, month:f.month.value};
     $('#cyc').textContent = tmp.date ? `→ ${monthLabel(cycleOf(tmp))} 가계부에 들어가요` : ''; };
   f.date.oninput = upd; f.month.oninput = upd; upd();
+  const moveMonth = k => { if (f.date.value) f.date.value = addMonths(f.date.value, k); if (f.month.value) f.month.value = shiftMonth(f.month.value, k); upd(); };
+  $('#d-prev').onclick = () => moveMonth(-1); $('#d-next').onclick = () => moveMonth(1);
   f.category.onchange = () => { const who = groupOf(e.type, f.category.value) === PERSONAL_GROUP && personOfCat(f.category.value); if (who) f.member.value = who; };
   f.amount.oninput = () => { const n = f.amount.value.replace(/[^\d]/g,''); f.amount.value = n ? (+n).toLocaleString('ko-KR') : ''; };
   // 상세를 고르면 예전에 쓴 카테고리·결제수단 자동 채움
@@ -405,6 +409,7 @@ function bindEntryForm(e){
     const item = {...e, date:f.date.value, amount:+f.amount.value.replace(/[^\d]/g,''), category:f.category.value,
       detail:f.detail.value.trim(), member:f.member.value, payMethod:f.payMethod.value, memo:f.memo.value.trim(), month:f.month.value};
     if (!item.amount) return toast('금액을 입력하세요');
+    delete item._copy;
     const isNew = !item.id; if (isNew) item.id = uid();
     S.edit = isNew && !S.returnTo ? {...newEntry(item.type), date:item.date, member:item.member, payMethod:item.payMethod, category:item.category} : null;
     if (S.returnTo) { S.view = S.returnTo; S.returnTo = null; }
@@ -463,7 +468,7 @@ function viewList(){
         <td>${esc(e.payMethod)}${needsSettle(e)?' <span class="tag warn">정산 전</span>':''}</td>
         <td class="num t-${e.type}">${fromSharedFund(e)?'<span class="muted" title="공동생활비에서 나간 돈 — 총지출 합계엔 미포함">(공동) </span>':isPersonal(e)?'<span class="muted" title="개인이 채워 넣을 돈 — 총지출 합계엔 미포함">(개인) </span>':''}${won(e.amount)}</td>
         <td class="muted">${esc(e.memo)}</td>
-        <td style="white-space:nowrap"><button class="btn sm ghost" data-e="${e.id}">수정</button><button class="btn sm ghost danger" data-d="${e.id}">삭제</button></td></tr>`).join('')
+        <td style="white-space:nowrap"><button class="btn sm ghost" data-e="${e.id}">수정</button><button class="btn sm ghost" data-c="${e.id}">복사</button><button class="btn sm ghost danger" data-d="${e.id}">삭제</button></td></tr>`).join('')
         || `<tr><td colspan="8" class="empty">${TYPES[T]} 내역이 없어요</td></tr>`}
     </table></div>`;
   bindMonth();
@@ -474,6 +479,11 @@ function viewList(){
   $('#fm').onchange = ev => { F.member = ev.target.value; render(); };
   $('#fc').onchange = ev => { F.cat = ev.target.value; render(); };
   $('#fq').oninput = ev => { F.q = ev.target.value; clearTimeout(S._q); S._q = setTimeout(() => { render(); const i=$('#fq'); i.focus(); i.setSelectionRange(i.value.length,i.value.length); }, 300); };
+  // 복사: 같은 내용으로 다음 달 날짜의 새 입력창 열기 (◀ ▶로 달 조정)
+  document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => {
+    const { id, recurringId, updatedAt, settled, ...rest } = S.data.entries.find(e => e.id === b.dataset.c);
+    S.edit = {...rest, _copy:true, settled:false, memo: /엑셀 가계부에서 옮김|^휴일이라/.test(rest.memo || '') ? '' : rest.memo, date: addMonths(rest.date, 1), month: rest.month ? shiftMonth(rest.month, 1) : ''};
+    render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-e]').forEach(b => b.onclick = () => { S.edit = {...S.data.entries.find(e=>e.id===b.dataset.e)}; render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const e = S.data.entries.find(x=>x.id===b.dataset.d);
     if (confirm(`${e.date} ${e.detail||e.category} ${won(e.amount)}원을 삭제할까요?`)) ops([{op:'delete', col:'entries', item:{id:e.id}}], '삭제했어요'); });
