@@ -351,7 +351,7 @@ function render(){
     <nav>${tabs.map(([k,l]) => `<button data-v="${k}" class="${S.view===k?'on':''}">${l}${k==='shared'&&unsettled?` <span class="tag warn">${unsettled}</span>`:''}</button>`).join('')}</nav></header>
     <main id="main"></main>`;
   document.body.classList.toggle('wide', S.view === 'year');
-  document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.view = b.dataset.v; S.edit = null; if (S.pending) pull(true); else render(); });
+  document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.view = b.dataset.v; S.edit = null; S.catEdit = null; if (S.pending) pull(true); else render(); });
   $('#logout').onclick = async ev => { ev.preventDefault(); await sb.auth.signOut(); S.data=null; renderLogin(); };
   ({dash:viewDash, list:viewList, shared:viewShared, rec:viewRec, year:viewYear, set:viewSet})[S.view]();
 }
@@ -909,11 +909,13 @@ function viewYear(){
 // ===== 설정 =====
 function viewSet(){
   const st = set();
-  const catBlock = type => `<div style="margin-bottom:14px"><b>${TYPES[type]}</b>
-    <div class="chips" style="margin:6px 0">${cats(type).map((c,i) => `<span class="chip">${esc(c.name)} <span class="muted">${esc(c.group)}</span><button data-cd="${type}:${i}" title="삭제">×</button></span>`).join('')}</div>
-    <div class="row"><input placeholder="새 카테고리" id="cn-${type}" style="width:130px"><input placeholder="그룹 (예: 변동비)" id="cg-${type}" style="width:170px" list="grp-${type}">
+  const ce = S.catEdit && S.data ? S.catEdit : null;   // {type, i} 수정 중인 카테고리
+  const catBlock = type => { const ed = ce && ce.type === type ? cats(type)[ce.i] : null;
+    return `<div style="margin-bottom:14px"><b>${TYPES[type]}</b> <span class="muted" style="font-size:12px">이름을 누르면 수정할 수 있어요</span>
+    <div class="chips" style="margin:6px 0">${cats(type).map((c,i) => `<span class="chip" ${ed===c?'style="border-color:var(--accent)"':''}><span data-ce="${type}:${i}" style="cursor:pointer" title="수정">${esc(c.name)} <span class="muted">${esc(c.group)}</span></span><button data-cd="${type}:${i}" title="삭제">×</button></span>`).join('')}</div>
+    <div class="row"><input placeholder="${ed?'카테고리 이름':'새 카테고리'}" id="cn-${type}" style="width:130px" value="${ed?esc(ed.name):''}"><input placeholder="그룹 (예: 변동비)" id="cg-${type}" style="width:170px" list="grp-${type}" value="${ed?esc(ed.group):''}">
     <datalist id="grp-${type}">${[...new Set(cats(type).map(c=>c.group))].map(g=>`<option value="${esc(g)}">`).join('')}</datalist>
-    <button class="btn sm" data-ca="${type}">추가</button></div></div>`;
+    ${ed ? `<button class="btn sm pri" data-cs2="${type}">수정 저장</button><button class="btn sm ghost" data-cc="${type}">취소</button>` : `<button class="btn sm" data-ca="${type}">추가</button>`}</div></div>`; };
   $('#main').innerHTML = `
     <div class="grid two">
       <div class="panel"><h2>기본</h2><div class="form" style="grid-template-columns:1fr 1fr">
@@ -976,6 +978,32 @@ function viewSet(){
   document.querySelectorAll('[data-cd]').forEach(b => b.onclick = () => { const [t,i] = b.dataset.cd.split(':');
     const c = st.categories[t][+i]; const used = S.data.entries.filter(e => e.type===t && e.category===c.name).length;
     if (confirm(`'${c.name}' 카테고리를 삭제할까요?${used?` (이미 ${used}건이 있어요. 내역은 그대로 남아요)`:''}`)) { st.categories[t].splice(+i,1); saveSettings(); } });
+  document.querySelectorAll('[data-ce]').forEach(b => b.onclick = () => { const [t,i] = b.dataset.ce.split(':'); S.catEdit = {type:t, i:+i}; render(); $('#cn-'+t).focus(); });
+  document.querySelectorAll('[data-cc]').forEach(b => b.onclick = () => { S.catEdit = null; render(); });
+  // 카테고리 수정: 이름이 바뀌면 지금까지 내역·고정항목·규칙·예산도 같이 바꿔요
+  document.querySelectorAll('[data-cs2]').forEach(b => b.onclick = async () => {
+    const t = b.dataset.cs2, c = st.categories[t][S.catEdit.i];
+    const n = $('#cn-'+t).value.trim(), g = $('#cg-'+t).value.trim() || '기타', old = c.name;
+    if (!n) return toast('이름을 입력해 주세요');
+    if (old === '공동생활비' && n !== old) return toast("'공동생활비'는 정산 계산에 쓰여서 이름은 못 바꿔요 (그룹만 바꿀 수 있어요)");
+    if (c.group === PERSONAL_GROUP && g !== PERSONAL_GROUP && !confirm(`그룹을 '${PERSONAL_GROUP}'에서 바꾸면 이 카테고리는 더 이상 정산 대기로 잡히지 않아요. 바꿀까요?`)) return;
+    if (n !== old && cats(t).some(x => x.name === n)) return toast('이미 있는 이름이에요');
+    const hitE = S.data.entries.filter(e => e.type === t && e.category === old), hitR = S.data.recurring.filter(r => r.type === t && r.category === old);
+    if (n !== old && (hitE.length || hitR.length) && !confirm(`'${old}' → '${n}'(으)로 바꿀까요?\n지금까지 내역 ${hitE.length}건${hitR.length?`, 고정항목 ${hitR.length}개`:''}도 같이 바뀌어요.`)) return;
+    c.name = n; c.group = g; S.catEdit = null;
+    if (n !== old) {
+      (st.importRules || []).forEach(r => { if (r.category === old) r.category = n; });
+      if (st.importDefault && st.importDefault.category === old) st.importDefault.category = n;
+      if (t === 'expense') {
+        if (st.budgets && old in st.budgets) { st.budgets[n] = st.budgets[old]; delete st.budgets[old]; }
+        st.sharedFundCats = (st.sharedFundCats || []).map(x => x === old ? n : x);
+      }
+    }
+    await saveSettings(`'${n}' 카테고리를 수정했어요`);
+    if (n !== old && (hitE.length || hitR.length))
+      ops([...hitE.map(e => ({op:'upsert', col:'entries', item:{...e, category:n}})), ...hitR.map(r => ({op:'upsert', col:'recurring', item:{...r, category:n}}))],
+        `내역 ${hitE.length}건${hitR.length?`·고정항목 ${hitR.length}개`:''}의 카테고리도 바꿨어요`);
+  });
   document.querySelectorAll('[data-ca]').forEach(b => b.onclick = () => { const t = b.dataset.ca, n = $('#cn-'+t).value.trim();
     if (!n) return; if (cats(t).some(c=>c.name===n)) return toast('이미 있는 이름이에요');
     st.categories[t].push({name:n, group:$('#cg-'+t).value.trim() || '기타'}); saveSettings(); });
