@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko">
 <head>
-<link rel="icon" type="image/x-icon" href="./favicon.png">
+<link rel="icon" type="image/png" href="./favicon.png">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>우리집 가계부</title>
@@ -682,7 +682,7 @@ function shiftBusinessDay(ds, rule){
   return fmtD(d);
 }
 const HOLIDAY_RULES = {'':'그대로', before:'앞당김', after:'미룸'};
-function genRecurring(month, list){
+function genRecurring(month, list, msg){
   const [y,m] = month.split('-').map(Number);
   const start = +set().cycleStartDay || 1;
   const items = list.map(r => {
@@ -698,7 +698,7 @@ function genRecurring(month, list){
     if (cycleOf(item) !== month) item.month = month;   // 날짜가 당겨져도 원래 달 가계부에 넣기
     return item;
   });
-  ops(items.map(item => ({op:'upsert', col:'entries', item})), `${items.length}건을 입력했어요. 금액이 달라진 항목(관리비 등)은 내역에서 고쳐주세요`);
+  ops(items.map(item => ({op:'upsert', col:'entries', item})), msg || `${items.length}건을 입력했어요. 금액이 달라진 항목(관리비 등)은 내역에서 고쳐주세요`);
 }
 function viewRec(){
   const recs = S.data.recurring;
@@ -746,7 +746,7 @@ function viewRec(){
           <div class="msub"><span>${esc(r.category)}</span><span class="tag ${r.member}">${esc(memberName(r.member))}</span>
             <span>매달 ${r.day}일${r.holidayRule?` (휴일 ${HOLIDAY_RULES[r.holidayRule]})`:''}</span><span>${r.source==='card'?'카드내역':'자동 입력'}</span>${r.payMethod?`<span>${esc(r.payMethod)}</span>`:''}</div>
           <div class="mrow" style="margin-top:6px;align-items:center">
-            <span>${done ? `<span class="tag">${r.source==='card'?'들어옴':'입력됨'} ${won(done.amount)}</span>` : r.active===false ? '<span class="tag">쉬는 중</span>' : r.source==='card' ? '<span class="tag">카드내역 대기</span>' : '<span class="tag warn">미입력</span>'}</span>
+            <span>${done ? `<span class="tag">${r.source==='card'?'들어옴':'입력됨'} ${won(done.amount)}</span>` : r.active===false ? '<span class="tag">쉬는 중</span>' : r.source==='card' ? '<span class="tag">카드내역 대기</span>' : `<span class="tag warn">미입력</span> <button class="btn sm pri" data-rg="${r.id}">입력</button>`}</span>
             <span class="mact" style="margin:0"><button class="btn ghost" data-re="${r.id}">수정</button><button class="btn ghost danger" data-rd="${r.id}">삭제</button></span></div>
         </div>`; }).join('')}</div>
       <div class="tbl pc-only" style="max-height:none;border:0"><table>
@@ -754,7 +754,7 @@ function viewRec(){
       ${rs.map(r => { const done = recDone(r, list);
         return `<tr class="m-${r.member}" style="${r.active===false?'opacity:.5':''}"><td>${esc(r.detail)}</td><td>${esc(r.category)}</td>
         <td class="mem">${esc(memberName(r.member))}</td><td>${esc(r.payMethod)}</td><td class="muted">${r.source==='card'?'카드내역':'자동 입력'}</td><td>${r.day}일${r.holidayRule?` <span class="muted" style="font-size:11px">휴일 ${HOLIDAY_RULES[r.holidayRule]}</span>`:''}</td><td class="num">${won(r.amount)}</td>
-        <td>${done ? `<span class="tag">${r.source==='card'?'들어옴':'입력됨'} ${won(done.amount)}</span>` : r.active===false ? '' : r.source==='card' ? '<span class="tag">카드내역 대기</span>' : '<span class="tag warn">미입력</span>'}</td>
+        <td>${done ? `<span class="tag">${r.source==='card'?'들어옴':'입력됨'} ${won(done.amount)}</span>` : r.active===false ? '' : r.source==='card' ? '<span class="tag">카드내역 대기</span>' : `<span class="tag warn">미입력</span> <button class="btn sm pri" data-rg="${r.id}">입력</button>`}</td>
         <td style="white-space:nowrap"><button class="btn sm ghost" data-re="${r.id}">수정</button><button class="btn sm ghost danger" data-rd="${r.id}">삭제</button></td></tr>`; }).join('')}
       </table></div></div>`).join('') : '<div class="panel empty">등록된 고정항목이 없어요</div>'}`;
   bindMonth();
@@ -770,6 +770,15 @@ function viewRec(){
   $('#rgen').onclick = () => { const p = recPending(list);
     if (!p.length) return toast('자동 입력할 고정항목이 없어요 (카드내역 항목은 카드 내역을 올리면 들어와요)');
     if (confirm(`${monthLabel(S.month)}에 ${p.length}건을 입력할까요?`)) genRecurring(S.month, p); };
+  // 고정항목 하나만 이번 달에 입력 (금액이 다르면 여기서 바꿔서 입력)
+  document.querySelectorAll('[data-rg]').forEach(b => b.onclick = () => {
+    const r = recs.find(x => x.id === b.dataset.rg); if (!r) return;
+    const v = prompt(`${monthLabel(S.month)}에 '${r.detail}'을(를) 입력할게요. 금액을 확인하세요`, won(r.amount));
+    if (v === null) return;
+    const amt = +String(v).replace(/[^\d]/g, '');
+    if (!amt) return toast('금액을 확인해 주세요');
+    genRecurring(S.month, [{...r, amount:amt}], `'${r.detail}' ${won(amt)}원을 입력했어요`);
+  });
   document.querySelectorAll('[data-re]').forEach(b => b.onclick = () => { S.edit = {...recs.find(r=>r.id===b.dataset.re), _rec:true}; render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-rd]').forEach(b => b.onclick = () => { if (confirm('이 고정항목을 삭제할까요? (이미 입력된 내역은 남아요)')) ops([{op:'delete', col:'recurring', item:{id:b.dataset.rd}}], '삭제했어요'); });
   if (e) {
