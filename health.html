@@ -29,6 +29,9 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px so
 .switch{display:inline-flex;border:1px solid var(--line);border-radius:99px;overflow:hidden;font-size:13px}
 .switch a{padding:4px 12px;text-decoration:none;color:var(--muted2);cursor:pointer}
 .switch a.on{background:var(--ink);color:var(--bg);cursor:default}
+.switch .more{display:none}
+@media(max-width:600px){ .switch a:not(.on):not(.more){display:none} .switch.open a{display:inline-block !important} .switch .more{display:inline-block} .switch.open{flex-wrap:wrap;border-radius:14px} }
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#e5484d;margin-left:4px;vertical-align:2px}
 .top .sync{font-size:12px;color:var(--muted2);margin-left:auto}
 nav{max-width:1100px;margin:0 auto;padding:0 16px;display:flex;gap:2px;overflow-x:auto}
 nav button{border:0;background:none;padding:10px 12px;cursor:pointer;color:var(--muted2);border-bottom:2px solid transparent;white-space:nowrap;font-weight:500}
@@ -190,8 +193,12 @@ async function load(){
   S.toto = (session?.user?.email || '').toLowerCase() === 'tksid1@gmail.com';
   const st = check(await sb.from('settings').select('data').eq('id', 1).maybeSingle());
   if (st && st.data) { if (Array.isArray(st.data.members)) S.members = st.data.members; S.expCats = ((st.data.categories || {}).expense || []).map(c => c.name); }
-  S.recs = await fetchRecs(); S.syncedAt = new Date(); render();
+  S.recs = await fetchRecs(); S.syncedAt = new Date(); render(); carDot();
 }
+// 다람이(자동차)에 곧 챙길 게 있으면 전환 버튼에 빨간 점
+async function carDot(){ try { const r = await sb.from('car').select('data').eq('id','status').maybeSingle(); const n = r.data && r.data.data && r.data.data.count || 0;
+  if (!!n !== !!S.carDot) { S.carDot = n; render(); } } catch(e){} }
+
 async function save(rec, msg){
   try { rec.updatedAt = new Date().toISOString();
     check(await sb.from('health').upsert({id:rec.id, data:rec, updated_at:rec.updatedAt}));
@@ -230,7 +237,7 @@ function render(){
   if (!S.recs) return renderLogin();
   const tabs = [['home','요약'],['exam','검진'],['trend','결과 추이'],['vax','예방접종'],['cost','비용'],['set','설정']];
   $('#app').innerHTML = `<header><div class="top"><h1>우리 건강</h1>
-      <span class="switch"><a href="index.html">가계부</a><a href="travel.html">여행</a><a class="on">건강</a>${S.toto ? '<a href="toto.html" title="따로 로그인">도토리 방앗간</a>' : ''}</span>
+      <span class="switch"><a href="index.html">가계부</a><a href="travel.html">여행</a><a class="on">건강</a><a href="car.html">다람이${S.carDot?'<i class="dot"></i>':''}</a>${S.toto ? '<a href="toto.html" title="따로 로그인">도토리 방앗간</a>' : ''}<a class="more" onclick="this.parentNode.classList.toggle('open')">▾${S.carDot?'<i class="dot"></i>':''}</a></span>
       <span class="sync">${S.syncedAt ? '동기화 ' + S.syncedAt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : ''} · <a href="#" id="logout">로그아웃</a></span></div>
     <nav>${tabs.map(([k,l]) => `<button data-v="${k}" class="${S.view===k?'on':''}">${l}</button>`).join('')}</nav></header><main id="main"></main>`;
   $('#logout').onclick = async e => { e.preventDefault(); await sb.auth.signOut(); location.href = 'index.html'; };
