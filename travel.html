@@ -72,6 +72,8 @@ label.f > input,label.f > select,label.f > textarea{font-size:15px;color:var(--i
 .trip .body{padding:12px 16px 14px}
 .trip .t{font-weight:700;font-size:16px}
 .trip .meta{font-size:13px;color:var(--muted2);margin-top:2px}
+.gtag{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;background:var(--s);margin-bottom:4px}
+.gtag.us{background:#fff0c2;color:#7a5a00} .gtag.h{background:var(--h)} .gtag.w{background:#ffe0ea;color:#8a2c4a}
 .trip .stats{display:flex;gap:12px;font-size:12px;color:var(--muted2);margin-top:10px}
 .colors{display:flex;gap:6px;flex-wrap:wrap}
 .colors button{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer}
@@ -156,11 +158,14 @@ const BUDGET_CATS = ['항공','숙소','교통','식비','관광·입장','쇼�
 const PACK_BASE = ['신분증','카드·현금','휴대폰 충전기','보조배터리','세면도구','상비약','갈아입을 옷','속옷·양말','잠옷','선크림','우산','안경·렌즈'];
 const PACK_ABROAD = ['여권','멀티어댑터','eSIM·유심','환전','여행자보험','항공권·예약 확인서'];
 
-const S = { trips:null, members:[{id:'h',name:'남편'},{id:'w',name:'아내'}], expCats:[], cur:null, tab:'plan', edit:null, ledger:null, toto:false };
+const S = { trips:null, members:[{id:'h',name:'남편'},{id:'w',name:'아내'}], expCats:[], cur:null, tab:'plan', grp:'all', edit:null, ledger:null, toto:false };
 const CFG = window.GAGYEBU_CONFIG || {};
 const sb = (CFG.supabaseUrl && window.supabase) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey) : null;
 const trip = () => S.trips.find(t => t.id === S.cur);
 const mName = id => id === 's' ? '공용' : (S.members.find(m => m.id === id) || {}).name || id;
+// 여행 구분: 우리 둘(큩토리) / 동현네 가족 / 보미네 가족
+const GROUPS = () => [['us','큩토리','💛'], ['h', `${mName('h')}네 가족`,'🏠'], ['w', `${mName('w')}네 가족`,'🏡']];
+const gName = g => (GROUPS().find(x => x[0] === (g||'us')) || GROUPS()[0]);
 const WHO = () => [['s','공용'], ...S.members.map(m => [m.id, m.name])];
 
 // ---------- 저장소 ----------
@@ -184,7 +189,7 @@ async function load(){
 }
 function normTrip(t){
   t.days = t.days || {}; t.packing = t.packing || []; t.bookings = t.bookings || [];
-  t.budget = t.budget || {}; t.ledgerCats = t.ledgerCats || ['여행비']; t.excluded = t.excluded || []; t.notes = t.notes || '';
+  t.budget = t.budget || {}; t.ledgerCats = t.ledgerCats || ['여행비']; t.excluded = t.excluded || []; t.notes = t.notes || ''; t.group = t.group || 'us';
   return t;
 }
 async function saveTrip(t, msg){
@@ -251,24 +256,29 @@ function render(){
 
 // ----- 여행 목록 -----
 function viewList(){
-  const up = S.trips.filter(t => t.end >= today()).sort((a,b) => a.start.localeCompare(b.start));
-  const past = S.trips.filter(t => t.end < today()).sort((a,b) => b.start.localeCompare(a.start));
+  const all = S.trips.filter(t => S.grp === 'all' || t.group === S.grp);
+  const cnt = g => S.trips.filter(t => g === 'all' || t.group === g).length;
+  const up = all.filter(t => t.end >= today()).sort((a,b) => a.start.localeCompare(b.start));
+  const past = all.filter(t => t.end < today()).sort((a,b) => b.start.localeCompare(a.start));
   const card = t => { const p = t.packing.length ? Math.round(t.packing.filter(x => x.done).length / t.packing.length * 100) : null;
     const plan = Object.values(t.days).reduce((a,d) => a + d.length, 0);
     return `<div class="trip" data-open="${t.id}"><div class="cover" style="background:${t.color||COLORS[0]}"><span>${t.emoji||'✈️'}</span><span class="dday">${dday(t)}</span></div>
-      <div class="body"><div class="t">${esc(t.title)}</div><div class="meta">${esc(t.dest||'')}${t.dest?' · ':''}${md(t.start)} ~ ${md(t.end)} · ${nights(t)}</div>
+      <div class="body"><span class="gtag ${t.group}">${gName(t.group)[2]} ${esc(gName(t.group)[1])}</span><div class="t">${esc(t.title)}</div><div class="meta">${esc(t.dest||'')}${t.dest?' · ':''}${md(t.start)} ~ ${md(t.end)} · ${nights(t)}</div>
       <div class="stats"><span>일정 ${plan}개</span><span>예약 ${t.bookings.length}건</span>${p!==null?`<span>준비물 ${p}%</span>`:''}</div></div></div>`; };
   $('#main').innerHTML = `<div class="row between" style="margin-bottom:14px"><div class="muted">두 사람이 같이 보고 고치는 여행 계획이에요.</div>
       <button class="btn pri" id="tnew">+ 새 여행</button></div>
+    <div class="subnav">${[['all','전체'], ...GROUPS().map(([k,l,ic]) => [k, ic+' '+l])].map(([k,l]) => `<button data-g="${k}" class="${S.grp===k?'on':''}">${esc(l)} <span style="opacity:.6">${cnt(k)}</span></button>`).join('')}</div>
     ${up.length ? `<div class="trips">${up.map(card).join('')}</div>` : `<div class="panel empty">다가오는 여행이 없어요.<br>「+ 새 여행」으로 첫 여행을 만들어 보세요.</div>`}
     ${past.length ? `<h3 style="margin:26px 0 10px;font-size:15px;color:var(--muted2)">다녀온 여행</h3><div class="trips">${past.map(card).join('')}</div>` : ''}`;
   $('#tnew').onclick = () => { const s = addDays(today(), 30);
-    S.edit = {_trip:true, id:'', title:'', dest:'', start:s, end:addDays(s, 2), emoji:'✈️', color:COLORS[0], abroad:false}; render(); };
+    S.edit = {_trip:true, id:'', title:'', dest:'', start:s, end:addDays(s, 2), emoji:'✈️', color:COLORS[0], abroad:false, group: S.grp === 'all' ? 'us' : S.grp}; render(); };
+  $$('[data-g]').forEach(b => b.onclick = () => { S.grp = b.dataset.g; render(); });
   $$('[data-open]').forEach(c => c.onclick = () => { S.cur = c.dataset.open; S.tab = 'plan'; S.ledger = null; render(); window.scrollTo(0,0); });
 }
 function viewTripForm(){
   const e = S.edit;
   $('#main').innerHTML = `<form id="tf" class="panel"><h2>${e.id ? '여행 정보 수정' : '새 여행'}</h2><div class="form">
+      <div class="wide"><div class="muted" style="margin-bottom:4px">누구랑 가는 여행</div><div class="subnav" style="margin:0">${GROUPS().map(([k,l,ic]) => `<button type="button" data-gp="${k}" class="${(e.group||'us')===k?'on':''}">${ic} ${esc(l)}</button>`).join('')}</div></div>
       <label class="f wide">여행 이름<input name="title" required value="${esc(e.title)}" placeholder="예: 겨울 제주 여행"></label>
       <label class="f">어디로<input name="dest" value="${esc(e.dest)}" placeholder="예: 제주"></label>
       <label class="f">출발<input name="start" type="date" required value="${e.start}"></label>
@@ -283,6 +293,7 @@ function viewTripForm(){
   const keep = () => { e.title = f.title.value; e.dest = f.dest.value; e.start = f.start.value; e.end = f.end.value; e.abroad = f.abroad.value === '1'; };
   $$('[data-em]').forEach(b => b.onclick = () => { keep(); e.emoji = b.dataset.em; render(); });
   $$('[data-co]').forEach(b => b.onclick = () => { keep(); e.color = b.dataset.co; render(); });
+  $$('[data-gp]').forEach(b => b.onclick = () => { keep(); e.group = b.dataset.gp; render(); });
   $('#tcancel').onclick = () => { S.edit = null; render(); };
   if ($('#tdel')) $('#tdel').onclick = () => { if (confirm(`'${e.title}' 여행을 삭제할까요? 일정·준비물·예약이 모두 지워져요.`)) { S.edit = null; deleteTrip(e.id); } };
   f.onsubmit = ev => { ev.preventDefault(); keep();
@@ -298,7 +309,7 @@ function viewTrip(){
   const tabs = [['plan','일정'],['pack','준비물'],['book','예약'],['money','예산'],['memo','메모']];
   $('#main').innerHTML = `<div class="row" style="margin-bottom:10px"><button class="btn ghost" id="back">← 여행 목록</button></div>
     <div class="hero" style="background:${t.color||COLORS[0]}"><span class="em">${t.emoji||'✈️'}</span>
-      <div><h2>${esc(t.title)}</h2><div class="meta">${esc(t.dest||'')}${t.dest?' · ':''}${md(t.start)} ~ ${md(t.end)} · ${nights(t)}${t.abroad?' · 해외':''}</div></div>
+      <div><span class="gtag ${t.group}" style="background:#fffc">${gName(t.group)[2]} ${esc(gName(t.group)[1])}</span><h2>${esc(t.title)}</h2><div class="meta">${esc(t.dest||'')}${t.dest?' · ':''}${md(t.start)} ~ ${md(t.end)} · ${nights(t)}${t.abroad?' · 해외':''}</div></div>
       <span class="dday">${dday(t)}</span><button class="btn sm" id="tedit" style="background:#fffc;border-color:transparent;color:#23211c">수정</button></div>
     <div class="subnav">${tabs.map(([k,l]) => `<button data-t="${k}" class="${S.tab===k?'on':''}">${l}</button>`).join('')}</div>
     <div id="tab"></div>`;
