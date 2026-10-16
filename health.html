@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<link rel="icon" type="image/png" href="./favicon.png">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>우리 건강</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f4ef; --panel:#fffdf8; --ink:#23211c; --muted2:#7a7466; --line:#e4dfd3;
+  --accent:#2f6f5e; --accent-soft:#e3efe9; --exp:#b4513a; --danger:#b4513a; --warn:#c4862b;
+  --h:#dfe6f5; --w:#fbefcf; --s:#ece9e1; --hc:#5b7fc7; --wc:#e0912f; --radius:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1a1916; --panel:#22211d; --ink:#ece8de; --muted2:#a39d8f; --line:#38352e;
+    --accent:#6fb59e; --accent-soft:#24362f; --exp:#e0876f; --danger:#e0876f; --h:#2a3247; --w:#3e3624; --s:#2d2b26; --hc:#8fa9dc; --wc:#e8b06a;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans KR",system-ui,sans-serif;-webkit-font-smoothing:antialiased;word-break:keep-all}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:inherit}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.top{max-width:1100px;margin:0 auto;padding:14px 16px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.top h1{font-size:18px;margin:0;font-weight:700;letter-spacing:-.02em}
+.switch{display:inline-flex;border:1px solid var(--line);border-radius:99px;overflow:hidden;font-size:13px}
+.switch a{padding:4px 12px;text-decoration:none;color:var(--muted2);cursor:pointer}
+.switch a.on{background:var(--ink);color:var(--bg);cursor:default}
+.top .sync{font-size:12px;color:var(--muted2);margin-left:auto}
+nav{max-width:1100px;margin:0 auto;padding:0 16px;display:flex;gap:2px;overflow-x:auto}
+nav button{border:0;background:none;padding:10px 12px;cursor:pointer;color:var(--muted2);border-bottom:2px solid transparent;white-space:nowrap;font-weight:500}
+nav button.on{color:var(--ink);border-color:var(--accent)}
+main{max-width:1100px;margin:0 auto;padding:18px 16px 60px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.between{justify-content:space-between}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+.panel h2{font-size:15px;margin:0 0 12px;font-weight:600}
+.panel h2 small{font-weight:400;color:var(--muted2);margin-left:6px}
+.panel h3{font-size:14px;margin:16px 0 8px;color:var(--muted2);font-weight:600}
+.btn{border:1px solid var(--line);background:var(--panel);padding:7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--muted2)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.sm{padding:3px 8px;font-size:13px}
+.btn.ghost{border-color:transparent;background:none}
+.btn.danger{color:var(--danger)}
+input,select,textarea{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:7px 9px;min-width:0}
+textarea{width:100%;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted2)}
+label.f > input,label.f > select,label.f > textarea{font-size:15px;color:var(--ink)}
+.form{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;align-items:end}
+.form .wide{grid-column:1/-1}
+.mform{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.mform label.f > input{font-size:14px;padding:6px 8px}
+.muted{color:var(--muted2);font-size:13px}
+.empty{padding:28px;text-align:center;color:var(--muted2)}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;background:var(--s);white-space:nowrap}
+.tag.h{background:var(--h)} .tag.w{background:var(--w)} .tag.ok{background:var(--accent-soft);color:var(--accent)} .tag.warn{background:#f6e3c4;color:#7a4f0e} .tag.bad{background:#f7d9d2;color:#8a2c1c}
+.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--panel);padding:6px 14px;cursor:pointer}
+.seg button.on{background:var(--ink);color:var(--bg)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:4px 12px;cursor:pointer;font-size:13px}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.bar{height:8px;border-radius:99px;background:var(--s);overflow:hidden}
+.bar > i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.login{max-width:340px;margin:16vh auto;padding:24px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:14px;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+.person{border-top:4px solid var(--hc)} .person.w{border-top-color:var(--wc)}
+.person .nm{font-size:18px;font-weight:700}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
+.kv:first-of-type{border-top:0}
+.kv .k{color:var(--muted2)}
+.mini{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:6px}
+.mini div{background:var(--bg);border-radius:8px;padding:7px 10px}
+.mini .l{font-size:11.5px;color:var(--muted2)}
+.mini .v{font-weight:700;font-variant-numeric:tabular-nums}
+.mini .d{font-size:11.5px;font-weight:500;margin-left:4px}
+.up{color:var(--danger)} .down{color:var(--accent)}
+.out{color:var(--danger);font-weight:700}
+.exam{display:grid;grid-template-columns:auto 1fr auto;gap:12px;padding:12px 0;border-top:1px solid var(--line);align-items:center;cursor:pointer}
+.exam:first-of-type{border-top:0}
+.exam .dt{font-weight:700;font-variant-numeric:tabular-nums;min-width:86px}
+.chk{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+.chk:first-of-type{border-top:0}
+.chk input{width:18px;height:18px;accent-color:var(--accent)}
+.chk.done span{text-decoration:line-through;color:var(--muted2)}
+.chk span{flex:1}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{font-size:12px;color:var(--muted2);font-weight:600}
+td.r,th.r{text-align:right}
+.tbl{overflow-x:auto}
+.legend{display:flex;gap:14px;font-size:12.5px;color:var(--muted2)}
+.legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:3px}
+svg text{fill:var(--muted2);font-size:11px}
+.note{background:var(--s);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--muted2)}
+@media(max-width:600px){ .exam{grid-template-columns:1fr auto} .exam .dt{grid-column:1/-1} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const won = n => (Math.round(n)||0).toLocaleString('ko-KR');
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const toNum = v => +String(v || '').replace(/[^\d]/g, '') || 0;
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2200); }
+const pad = n => String(n).padStart(2,'0');
+const fmtD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const today = () => fmtD(new Date());
+const parseD = s => new Date(s + 'T00:00:00');
+const diffDays = (a, b) => Math.round((parseD(b) - parseD(a)) / 86400000);
+const WD = ['일','월','화','수','목','금','토'];
+const ymd = s => s ? `${s.slice(2,4)}.${+s.slice(5,7)}.${+s.slice(8)}` : '';
+const md = s => s ? `${+s.slice(5,7)}/${+s.slice(8)}(${WD[parseD(s).getDay()]})` : '';
+const dd = s => { const n = diffDays(today(), s); return n > 0 ? `D-${n}` : n === 0 ? '오늘' : `${-n}일 지남`; };
+
+// 결과 수치 항목 (단위는 국가건강검진 결과지 기준)
+const METRICS = [
+  ['height','키','cm','신체'],['weight','체중','kg','신체'],['waist','허리둘레','cm','신체'],['bmi','BMI','','신체'],
+  ['sbp','수축기 혈압','mmHg','혈압'],['dbp','이완기 혈압','mmHg','혈압'],
+  ['glu','공복혈당','mg/dL','혈당'],['a1c','당화혈색소','%','혈당'],
+  ['tc','총콜레스테롤','mg/dL','지질'],['hdl','HDL 콜레스테롤','mg/dL','지질'],['ldl','LDL 콜레스테롤','mg/dL','지질'],['tg','중성지방','mg/dL','지질'],
+  ['ast','AST','U/L','간'],['alt','ALT','U/L','간'],['ggt','감마GTP','U/L','간'],
+  ['hb','혈색소','g/dL','기타'],['cr','크레아티닌','mg/dL','기타'],['egfr','eGFR','mL/min','기타'],
+];
+const MG = [...new Set(METRICS.map(m => m[3]))];
+const mInfo = k => METRICS.find(m => m[0] === k);
+const KEY_METRICS = ['weight','sbp','glu','tc','ldl','alt'];
+const EXAM_TYPES = ['국가건강검진','종합검진','회사 검진','추가·재검사','기타'];
+const PREP = {
+  '기본':['전날 저녁 9시 이후 금식 (물 허용 여부는 병원 안내 확인)','신분증 챙기기','문진표 미리 작성','복용 중인 약 — 당일 먹어도 되는지 병원에 확인'],
+  '위내시경':['수면 내시경이면 보호자·귀가 방법 정하기','당일 운전 안 하기 (수면)'],
+  '대장내시경':['3일 전부터 씨 있는 과일·잡곡·해조류 피하기','전날 흰죽 등 가벼운 식사','장 정결제 받기','장 정결제 먹는 시간 확인 (병원 안내대로)'],
+  '여성 검진':['생리 기간 피해서 날짜 잡기','자궁경부 검사 전 2일간 질정·세정제 피하기'],
+};
+const VAX = ['독감','코로나19','대상포진','폐렴구균','A형간염','B형간염','파상풍(Td/Tdap)','HPV','기타'];
+
+const S = { recs:null, members:[{id:'h',name:'남편'},{id:'w',name:'아내'}], expCats:[], view:'home', who:'all', edit:null, open:null, metric:'sbp', year:new Date().getFullYear(), ledger:null, toto:false };
+const CFG = window.GAGYEBU_CONFIG || {};
+const sb = (CFG.supabaseUrl && window.supabase) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey) : null;
+const mName = id => (S.members.find(m => m.id === id) || {}).name || id;
+const PEOPLE = () => S.members.map(m => m.id);
+const cfg = () => S.recs.find(r => r.kind === 'cfg') || {id:'cfg', kind:'cfg', people:{}, ranges:{}, ledgerCats:null};
+const exams = who => S.recs.filter(r => r.kind === 'exam' && (!who || who === 'all' || r.who === who));
+const vaxes = who => S.recs.filter(r => r.kind === 'vax' && (!who || who === 'all' || r.who === who));
+const doneExams = who => exams(who).filter(e => e.status === 'done').sort((a,b) => a.date.localeCompare(b.date));
+function val(e, k){
+  const r = e.r || {};
+  if (k === 'bmi') { const h = +r.height, w = +r.weight; return h && w ? Math.round(w / (h/100) ** 2 * 10) / 10 : null; }
+  return r[k] === '' || r[k] == null ? null : +r[k];
+}
+function range(who, k){ const x = ((cfg().ranges || {})[who] || {})[k] || {}; return {min: x.min === '' || x.min == null ? null : +x.min, max: x.max === '' || x.max == null ? null : +x.max}; }
+function isOut(who, k, v){ if (v == null) return false; const {min, max} = range(who, k); return (min != null && v < min) || (max != null && v > max); }
+function natl(who){   // 국가건강검진(일반) — 사무직 2년마다(출생연도 짝·홀과 같은 해), 비사무직 매년
+  const p = (cfg().people || {})[who] || {}; const y = new Date().getFullYear();
+  if (!p.birthYear) return {txt:'생년을 설정에 넣으면 대상 연도를 알려줘요', on:null};
+  if (p.yearly) return {txt:'올해 국가건강검진 대상이에요 (매년)', on:true};
+  const on = (+p.birthYear % 2) === (y % 2);
+  return {txt: on ? `올해 국가건강검진 대상이에요 (${+p.birthYear % 2 ? '홀수' : '짝수'}년생)` : `${y+1}년에 국가건강검진 대상이에요`, on};
+}
+
+// ---------- 저장소 ----------
+function check(res){ if (res.error) { if (/JWT|auth/i.test(res.error.message)) { S.recs = null; renderLogin(); throw new Error('login'); } throw new Error(res.error.message); } return res.data; }
+async function fetchRecs(){
+  const rows = []; for (let off = 0; ; off += 1000) {
+    const res = await sb.from('health').select('id,data').order('id').range(off, off + 999);
+    if (res.error && /health/.test(res.error.message) && !/JWT/.test(res.error.message)) {
+      $('#app').innerHTML = `<div class="panel login"><h2>한 번만 설정이 필요해요</h2><p class="muted">Supabase <b>SQL Editor</b>에서 <code>health_schema.sql</code> 내용을 붙여넣고 Run 해주세요. 그다음 새로고침하면 돼요.</p></div>`;
+      throw new Error('setup'); }
+    const part = check(res); rows.push(...part.map(r => r.data)); if (part.length < 1000) break; }
+  return rows;
+}
+async function load(){
+  const { data:{ session } } = await sb.auth.getSession();
+  S.toto = (session?.user?.email || '').toLowerCase() === 'tksid1@gmail.com';
+  const st = check(await sb.from('settings').select('data').eq('id', 1).maybeSingle());
+  if (st && st.data) { if (Array.isArray(st.data.members)) S.members = st.data.members; S.expCats = ((st.data.categories || {}).expense || []).map(c => c.name); }
+  S.recs = await fetchRecs(); S.syncedAt = new Date(); render();
+}
+async function save(rec, msg){
+  try { rec.updatedAt = new Date().toISOString();
+    check(await sb.from('health').upsert({id:rec.id, data:rec, updated_at:rec.updatedAt}));
+    S.selfWrite = Date.now(); S.syncedAt = new Date();
+    const i = S.recs.findIndex(x => x.id === rec.id); if (i >= 0) S.recs[i] = rec; else S.recs.push(rec);
+    render(); if (msg) toast(msg); return true;
+  } catch(e){ if (e.message !== 'login') toast('저장 실패: ' + e.message); return false; }
+}
+async function remove(id, msg){
+  try { check(await sb.from('health').delete().eq('id', id)); S.selfWrite = Date.now(); S.recs = S.recs.filter(r => r.id !== id); render(); toast(msg || '삭제했어요'); }
+  catch(e){ if (e.message !== 'login') toast('삭제 실패: ' + e.message); }
+}
+function subscribe(){
+  if (S.channel) return;
+  S.channel = sb.channel('health').on('postgres_changes', {event:'*', schema:'public', table:'health'}, () => {
+    if (S.selfWrite && Date.now() - S.selfWrite < 3000) return; clearTimeout(S._rt); S._rt = setTimeout(pull, 800); }).subscribe();
+}
+async function pull(){
+  if (S.edit || document.activeElement?.matches('input,textarea,select')) { S.pending = true; return; }
+  try { S.recs = await fetchRecs(); S.pending = false; S.syncedAt = new Date(); render(); toast('다른 기기에서 바뀐 내용을 반영했어요'); } catch(e){}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.recs && S.pending) pull(); });
+
+// ---------- 화면 ----------
+function renderLogin(){
+  $('#app').innerHTML = `<div class="panel login"><h2>우리 건강</h2>
+    <form id="lf" style="display:grid;gap:12px"><label class="f">이메일<input type="email" id="em" autocomplete="username" autofocus></label>
+    <label class="f">비밀번호<input type="password" id="pw" autocomplete="current-password"></label>
+    <button class="btn pri">들어가기</button><div class="muted" id="lerr"></div></form><p class="muted">가계부와 같은 계정이에요.</p></div>`;
+  $('#lf').onsubmit = async ev => { ev.preventDefault();
+    const r = await sb.auth.signInWithPassword({email: $('#em').value.trim(), password: $('#pw').value});
+    if (r.error) return $('#lerr').textContent = '이메일 또는 비밀번호가 맞지 않아요';
+    try { await load(); subscribe(); } catch(e){ if (e.message !== 'setup') $('#lerr').textContent = e.message; } };
+}
+function render(){
+  if (!S.recs) return renderLogin();
+  const tabs = [['home','요약'],['exam','검진'],['trend','결과 추이'],['vax','예방접종'],['cost','비용'],['set','설정']];
+  $('#app').innerHTML = `<header><div class="top"><h1>우리 건강</h1>
+      <span class="switch"><a href="index.html">가계부</a><a href="travel.html">여행</a><a class="on">건강</a>${S.toto ? '<a href="toto.html" title="따로 로그인">도토리 방앗간</a>' : ''}</span>
+      <span class="sync">${S.syncedAt ? '동기화 ' + S.syncedAt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : ''} · <a href="#" id="logout">로그아웃</a></span></div>
+    <nav>${tabs.map(([k,l]) => `<button data-v="${k}" class="${S.view===k?'on':''}">${l}</button>`).join('')}</nav></header><main id="main"></main>`;
+  $('#logout').onclick = async e => { e.preventDefault(); await sb.auth.signOut(); location.href = 'index.html'; };
+  $$('nav button').forEach(b => b.onclick = () => { S.view = b.dataset.v; S.edit = null; S.open = null; if (S.pending) pull(); render(); window.scrollTo(0,0); });
+  ({home:viewHome, exam:viewExam, trend:viewTrend, vax:viewVax, cost:viewCost, set:viewSet})[S.view]();
+}
+const whoSeg = (all = true) => `<div class="seg">${(all ? [['all','둘 다']] : []).concat(PEOPLE().map(id => [id, mName(id)])).map(([k,l]) => `<button data-who="${k}" class="${S.who===k?'on':''}">${esc(l)}</button>`).join('')}</div>`;
+function bindWho(){ $$('[data-who]').forEach(b => b.onclick = () => { S.who = b.dataset.who; render(); }); }
+const whoTag = id => `<span class="tag ${id}">${esc(mName(id))}</span>`;
+
+// ----- 요약 -----
+function viewHome(){
+  const card = id => {
+    const n = natl(id);
+    const next = exams(id).filter(e => e.status !== 'done' && e.date >= today()).sort((a,b) => a.date.localeCompare(b.date))[0];
+    const done = doneExams(id), last = done[done.length - 1], prev = done[done.length - 2];
+    const fol = exams(id).filter(e => e.followUp).sort((a,b) => a.followUp.localeCompare(b.followUp)).filter(e => e.followUp >= addDaysStr(today(), -30));
+    const vx = vaxes(id).filter(v => v.next).sort((a,b) => a.next.localeCompare(b.next)).filter(v => diffDays(today(), v.next) <= 60);
+    const prepDone = next && next.prep ? next.prep.filter(p => p.done).length : 0;
+    return `<div class="panel person ${id}"><div class="row between"><span class="nm">${esc(mName(id))}</span>
+        <span class="tag ${n.on ? 'ok' : ''}">${esc(n.txt)}</span></div>
+      <div style="margin-top:12px">
+      <div class="kv"><span class="k">다음 검진</span><span>${next ? `<b>${md(next.date)}</b> ${esc(next.hospital||'')} <span class="tag warn">${dd(next.date)}</span>` : '<span class="muted">예약 없음</span>'}</span></div>
+      ${next && (next.prep||[]).length ? `<div class="kv"><span class="k">준비</span><span>${prepDone}/${next.prep.length} 챙김 <a href="#" data-goexam="${next.id}">체크하기</a></span></div>` : ''}
+      <div class="kv"><span class="k">최근 검진</span><span>${last ? `${ymd(last.date)} · ${esc(last.type||'')}` : '<span class="muted">기록 없음</span>'}</span></div>
+      ${fol.map(e => `<div class="kv"><span class="k">추가 진료</span><span>${md(e.followUp)} ${esc(e.followMemo||'')} <span class="tag ${e.followUp < today() ? '' : 'warn'}">${dd(e.followUp)}</span></span></div>`).join('')}
+      ${vx.map(v => `<div class="kv"><span class="k">예방접종</span><span>${esc(v.name)} ${md(v.next)} <span class="tag ${v.next < today() ? 'bad' : 'warn'}">${dd(v.next)}</span></span></div>`).join('')}
+      </div>
+      ${last ? `<div class="mini">${KEY_METRICS.map(k => { const v = val(last, k); if (v == null) return ''; const pv = prev ? val(prev, k) : null; const [, l, u] = mInfo(k);
+        const d = pv != null ? Math.round((v - pv) * 10) / 10 : null;
+        return `<div><div class="l">${l}</div><div class="v ${isOut(id,k,v)?'out':''}">${v}<span class="muted" style="font-weight:400;font-size:11px"> ${u}</span>${d ? `<span class="d ${d>0?'up':'down'}">${d>0?'▲':'▼'}${Math.abs(d)}</span>` : ''}</div></div>`; }).join('')}</div>` : ''}
+    </div>`; };
+  $('#main').innerHTML = `<div class="grid2">${PEOPLE().map(card).join('')}</div>
+    <div class="row"><button class="btn pri" id="hadd">+ 검진 예약·기록</button><button class="btn" id="vadd">+ 예방접종</button></div>
+    <p class="muted" style="margin-top:16px">빨간 숫자는 설정에 적어둔 정상 범위를 벗어난 값이에요. 화살표는 지난 검진과 비교한 변화예요. 수치 해석은 꼭 결과지와 의사 소견을 따라주세요.</p>`;
+  $('#hadd').onclick = () => { S.view = 'exam'; newExam(); };
+  $('#vadd').onclick = () => { S.view = 'vax'; S.edit = {_vax:true, who: PEOPLE()[0], name:'독감', date:today(), next:'', memo:''}; render(); };
+  $$('[data-goexam]').forEach(a => a.onclick = e => { e.preventDefault(); S.view = 'exam'; S.open = a.dataset.goexam; render(); });
+}
+function addDaysStr(s, n){ const d = parseD(s); d.setDate(d.getDate() + n); return fmtD(d); }
+
+// ----- 검진 -----
+function newExam(){ S.open = null; S.edit = {_exam:true, who: S.who === 'all' ? PEOPLE()[0] : S.who, date: today(), time:'', hospital:'', type:'국가건강검진', status:'plan', prep:[], r:{}, findings:'', followUp:'', followMemo:'', cost:0}; render(); }
+function viewExam(){
+  if (S.edit && S.edit._exam) return examForm();
+  if (S.open) { const e = S.recs.find(r => r.id === S.open); if (e) return examDetail(e); S.open = null; }
+  const list = exams(S.who).sort((a,b) => b.date.localeCompare(a.date));
+  const plan = list.filter(e => e.status !== 'done').sort((a,b) => a.date.localeCompare(b.date)), done = list.filter(e => e.status === 'done');
+  const row = e => `<div class="exam" data-open="${e.id}"><div class="dt">${ymd(e.date)}</div>
+      <div><div style="font-weight:600">${whoTag(e.who)} ${esc(e.type||'')} ${e.hospital ? '· ' + esc(e.hospital) : ''}</div>
+      <div class="muted">${e.status === 'done' ? `결과 ${Object.keys(e.r||{}).filter(k => e.r[k] !== '').length}개 기록${e.findings ? ' · 소견 있음' : ''}${e.followUp ? ` · 추가 진료 ${md(e.followUp)}` : ''}`
+        : `${e.time ? esc(e.time) + ' · ' : ''}준비 ${(e.prep||[]).filter(p=>p.done).length}/${(e.prep||[]).length}`}</div></div>
+      <span class="tag ${e.status === 'done' ? 'ok' : 'warn'}">${e.status === 'done' ? '완료' : dd(e.date)}</span></div>`;
+  $('#main').innerHTML = `<div class="row between" style="margin-bottom:14px">${whoSeg()}<button class="btn pri" id="eadd">+ 검진 예약·기록</button></div>
+    <div class="panel"><h2>예정된 검진</h2>${plan.length ? plan.map(row).join('') : '<div class="muted">예약한 검진이 없어요</div>'}</div>
+    <div class="panel"><h2>지난 검진</h2>${done.length ? done.map(row).join('') : '<div class="muted">기록이 없어요. 예전 결과지가 있으면 날짜를 지난 날로 넣고 「완료」로 기록하세요.</div>'}</div>`;
+  bindWho();
+  $('#eadd').onclick = newExam;
+  $$('[data-open]').forEach(d => d.onclick = () => { S.open = d.dataset.open; render(); window.scrollTo(0,0); });
+}
+function examDetail(e){
+  const prep = e.prep || [];
+  const filled = METRICS.filter(([k]) => val(e, k) != null);
+  $('#main').innerHTML = `<div class="row between" style="margin-bottom:10px"><button class="btn ghost" id="back">← 검진 목록</button>
+      <span class="row"><button class="btn" id="eedit">수정</button><button class="btn ghost danger" id="edel">삭제</button></span></div>
+    <div class="panel person ${e.who}"><div class="row between"><div><span class="nm">${esc(mName(e.who))}</span> <span class="muted">${esc(e.type||'')}</span></div>
+      <span class="tag ${e.status === 'done' ? 'ok' : 'warn'}">${e.status === 'done' ? '완료' : dd(e.date)}</span></div>
+      <div style="margin-top:6px">${md(e.date)} ${esc(e.time||'')} · ${esc(e.hospital||'병원 미정')}${+e.cost ? ` · 추가 비용 ${won(e.cost)}원` : ''}</div></div>
+    ${e.status !== 'done' || prep.length ? `<div class="panel"><h2>준비 체크리스트 <small>${prep.filter(p=>p.done).length}/${prep.length}</small></h2>
+      ${prep.length ? `<div class="bar" style="margin-bottom:8px"><i style="width:${prep.filter(p=>p.done).length/prep.length*100}%"></i></div>` : ''}
+      ${prep.map(p => `<label class="chk ${p.done?'done':''}"><input type="checkbox" data-pp="${p.id}" ${p.done?'checked':''}><span>${esc(p.text)}</span></label>`).join('') || '<div class="muted">수정에서 준비물을 넣을 수 있어요</div>'}
+      ${e.status !== 'done' ? `<div class="row" style="margin-top:12px"><button class="btn pri" id="edone">검진 다녀왔어요 → 결과 입력</button></div>` : ''}</div>` : ''}
+    ${e.status === 'done' ? `<div class="panel"><h2>결과 수치</h2>${filled.length ? `<div class="mini">${filled.map(([k,l,u]) => { const v = val(e,k); const {min,max} = range(e.who,k);
+        return `<div><div class="l">${l}</div><div class="v ${isOut(e.who,k,v)?'out':''}">${v}<span class="muted" style="font-weight:400;font-size:11px"> ${u}</span></div>${min!=null||max!=null?`<div class="l">범위 ${min??''}~${max??''}</div>`:''}</div>`; }).join('')}</div>`
+        : '<div class="muted">입력한 수치가 없어요. 「수정」에서 결과지 숫자를 넣어주세요.</div>'}</div>` : ''}
+    ${e.findings || e.followUp ? `<div class="panel"><h2>소견·추가 진료</h2>${e.findings ? `<div style="white-space:pre-wrap">${esc(e.findings)}</div>` : ''}
+      ${e.followUp ? `<div class="kv" style="margin-top:8px"><span class="k">추가 진료·재검</span><span>${md(e.followUp)} ${esc(e.followMemo||'')} <span class="tag warn">${dd(e.followUp)}</span></span></div>` : ''}</div>` : ''}`;
+  $('#back').onclick = () => { S.open = null; render(); };
+  $('#eedit').onclick = () => { S.edit = {_exam:true, ...JSON.parse(JSON.stringify(e))}; render(); };
+  $('#edel').onclick = () => { if (confirm('이 검진 기록을 삭제할까요?')) { S.open = null; remove(e.id); } };
+  $$('[data-pp]').forEach(c => c.onchange = () => { e.prep.find(p => p.id === c.dataset.pp).done = c.checked; save(e); });
+  if ($('#edone')) $('#edone').onclick = () => { S.edit = {_exam:true, ...JSON.parse(JSON.stringify(e)), status:'done', _focusResults:true}; render(); };
+}
+function examForm(){
+  const e = S.edit;
+  $('#main').innerHTML = `<form id="ef"><div class="panel"><h2>${e.id ? '검진 수정' : '검진 예약·기록'}</h2><div class="form">
+      <label class="f">누구<select name="who">${PEOPLE().map(id => `<option value="${id}" ${e.who===id?'selected':''}>${esc(mName(id))}</option>`).join('')}</select></label>
+      <label class="f">종류<select name="type">${EXAM_TYPES.map(x => `<option ${e.type===x?'selected':''}>${x}</option>`).join('')}</select></label>
+      <label class="f">날짜<input name="date" type="date" required value="${e.date}"></label>
+      <label class="f">시간<input name="time" type="time" value="${esc(e.time)}"></label>
+      <label class="f">병원<input name="hospital" value="${esc(e.hospital)}" placeholder="예: OO내과"></label>
+      <label class="f">상태<select name="status"><option value="plan">예약·예정</option><option value="done" ${e.status==='done'?'selected':''}>다녀옴 (결과 기록)</option></select></label>
+      <label class="f">추가 비용 (원)<input name="cost" inputmode="numeric" value="${+e.cost?won(e.cost):''}" placeholder="수면 내시경 등"></label>
+    </div></div>
+    <div class="panel"><h2>준비 체크리스트</h2>
+      <div class="row" style="gap:6px;margin-bottom:8px"><span class="muted">자주 쓰는 목록:</span>${Object.keys(PREP).map(k => `<button type="button" class="chip" data-tpl="${k}">+ ${k}</button>`).join('')}</div>
+      <div id="plist">${(e.prep||[]).map((p,i) => `<div class="chk"><input type="checkbox" data-pi="${i}" ${p.done?'checked':''}><span>${esc(p.text)}</span><button type="button" class="btn sm ghost danger" data-px="${i}">×</button></div>`).join('')}</div>
+      <div class="row" style="margin-top:8px"><input id="pnew" placeholder="직접 추가" style="flex:1;min-width:160px"><button type="button" class="btn sm" id="padd">추가</button></div></div>
+    <div class="panel" id="resp"><h2>결과 수치 <small>결과지에 있는 것만 넣으면 돼요</small></h2>
+      ${MG.map(g => `<h3>${g}</h3><div class="mform">${METRICS.filter(m => m[3] === g && m[0] !== 'bmi').map(([k,l,u]) => `<label class="f">${l}${u?` (${u})`:''}<input data-m="${k}" inputmode="decimal" value="${esc((e.r||{})[k] ?? '')}"></label>`).join('')}</div>`).join('')}</div>
+    <div class="panel"><h2>소견·추가 진료</h2><div class="form">
+      <label class="f wide">의사 소견·특이사항<textarea name="findings" rows="3" placeholder="예: 위 용종 1개 제거, 조직검사 결과 다음 주">${esc(e.findings)}</textarea></label>
+      <label class="f">추가 진료·재검 날짜<input name="followUp" type="date" value="${esc(e.followUp)}"></label>
+      <label class="f wide">무엇 때문에<input name="followMemo" value="${esc(e.followMemo)}" placeholder="예: 6개월 뒤 갑상선 초음파 재검"></label></div></div>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" id="ecancel">취소</button><button class="btn pri">저장</button></div></form>`;
+  const f = $('#ef');
+  const keep = () => { ['who','type','date','time','hospital','status','findings','followUp','followMemo'].forEach(k => e[k] = f[k].value); e.cost = toNum(f.cost.value);
+    e.r = {}; $$('[data-m]').forEach(i => { const v = i.value.trim().replace(/,/g,''); if (v !== '' && !isNaN(+v)) e.r[i.dataset.m] = +v; });
+    $$('[data-pi]').forEach(c => e.prep[+c.dataset.pi].done = c.checked); };
+  f.cost.oninput = () => { const n = toNum(f.cost.value); f.cost.value = n ? won(n) : ''; };
+  $$('[data-tpl]').forEach(b => b.onclick = () => { keep(); const have = new Set(e.prep.map(p => p.text));
+    PREP[b.dataset.tpl].filter(t => !have.has(t)).forEach(text => e.prep.push({id:uid(), text, done:false})); render(); });
+  $('#padd').onclick = () => { const t = $('#pnew').value.trim(); if (!t) return; keep(); e.prep.push({id:uid(), text:t, done:false}); render(); $('#pnew').focus(); };
+  $('#pnew').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); $('#padd').click(); } };
+  $$('[data-px]').forEach(b => b.onclick = () => { keep(); e.prep.splice(+b.dataset.px, 1); render(); });
+  $('#ecancel').onclick = () => { S.edit = null; render(); };
+  if (e._focusResults) { delete e._focusResults; $('#resp').scrollIntoView(); }
+  f.onsubmit = async ev => { ev.preventDefault(); keep();
+    const {_exam, ...rec} = e; rec.id = rec.id || uid(); rec.kind = 'exam';
+    S.edit = null; S.open = rec.id; await save(rec, '저장했어요'); };
+}
+
+// ----- 결과 추이 -----
+function chart(k){
+  const ids = S.who === 'all' ? PEOPLE() : [S.who];
+  const series = ids.map(id => ({id, pts: doneExams(id).map(e => ({d:e.date, v:val(e,k)})).filter(p => p.v != null)}));
+  const all = series.flatMap(s => s.pts);
+  if (!all.length) return '<div class="empty">이 항목은 아직 기록이 없어요</div>';
+  const W = 680, H = 230, P = {l:44, r:16, t:14, b:28};
+  const ts = all.map(p => parseD(p.d).getTime()); let t0 = Math.min(...ts), t1 = Math.max(...ts); if (t0 === t1) { t0 -= 2e10; t1 += 2e10; }
+  const one = ids.length === 1 ? range(ids[0], k) : {min:null, max:null};
+  const vs = all.map(p => p.v).concat([one.min, one.max].filter(x => x != null));
+  let v0 = Math.min(...vs), v1 = Math.max(...vs); const pad = (v1 - v0) * .15 || Math.abs(v1) * .1 || 1; v0 -= pad; v1 += pad;
+  const x = t => P.l + (t - t0) / (t1 - t0) * (W - P.l - P.r), y = v => P.t + (1 - (v - v0) / (v1 - v0)) * (H - P.t - P.b);
+  const ticks = [0, .25, .5, .75, 1].map(f => v0 + (v1 - v0) * f);
+  const col = id => id === 'h' ? 'var(--hc)' : 'var(--wc)';
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+    ${one.min != null || one.max != null ? `<rect x="${P.l}" y="${y(one.max ?? v1)}" width="${W-P.l-P.r}" height="${y(one.min ?? v0) - y(one.max ?? v1)}" fill="var(--accent-soft)"/>` : ''}
+    ${ticks.map(v => `<line x1="${P.l}" x2="${W-P.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${P.l-6}" y="${y(v)+4}" text-anchor="end">${Math.round(v*10)/10}</text>`).join('')}
+    ${[...new Set(all.map(p => p.d))].sort().filter((d,i,arr) => i === 0 || d.slice(0,4) !== arr[i-1].slice(0,4)).map(d => `<text x="${x(parseD(d).getTime())}" y="${H-8}" text-anchor="middle">${d.slice(0,4)}</text>`).join('')}
+    ${series.map(s => s.pts.length ? `<polyline fill="none" stroke="${col(s.id)}" stroke-width="2.5" points="${s.pts.map(p => `${x(parseD(p.d).getTime())},${y(p.v)}`).join(' ')}"/>
+      ${s.pts.map(p => `<circle cx="${x(parseD(p.d).getTime())}" cy="${y(p.v)}" r="4.5" fill="${isOut(s.id,k,p.v)?'var(--danger)':col(s.id)}"><title>${mName(s.id)} ${p.d} ${p.v}</title></circle>
+        <text x="${x(parseD(p.d).getTime())}" y="${y(p.v)-9}" text-anchor="middle" style="font-weight:600">${p.v}</text>`).join('')}` : '').join('')}
+  </svg>`;
+}
+function viewTrend(){
+  const k = S.metric, [, l, u] = mInfo(k);
+  const ids = S.who === 'all' ? PEOPLE() : [S.who];
+  $('#main').innerHTML = `<div class="row between" style="margin-bottom:14px">${whoSeg()}</div>
+    <div class="panel"><div class="chips" style="margin-bottom:14px">${METRICS.map(([mk,ml]) => `<button class="chip ${mk===k?'on':''}" data-mk="${mk}">${ml}</button>`).join('')}</div>
+      <div class="row between"><h2 style="margin:0">${l} <small>${u}</small></h2><div class="legend">${ids.map(id => `<span><i style="background:${id==='h'?'var(--hc)':'var(--wc)'}"></i>${esc(mName(id))}</span>`).join('')}</div></div>
+      ${chart(k)}
+      ${ids.length === 1 && (range(ids[0],k).min != null || range(ids[0],k).max != null) ? '<div class="muted">초록 띠는 설정에 적은 정상 범위예요</div>' : '<div class="muted">설정에서 정상 범위를 적으면 벗어난 값이 빨간 점으로 보여요</div>'}</div>
+    ${ids.map(id => { const ex = doneExams(id).slice(-6);
+      return `<div class="panel"><h2>${esc(mName(id))} <small>최근 ${ex.length}번 검진</small></h2>${ex.length ? `<div class="tbl"><table><tr><th>항목</th>${ex.map(e => `<th class="r">${ymd(e.date)}</th>`).join('')}</tr>
+        ${METRICS.filter(([mk]) => ex.some(e => val(e,mk) != null)).map(([mk,ml,mu]) => `<tr><td>${ml} <span class="muted">${mu}</span></td>${ex.map(e => { const v = val(e,mk); return `<td class="r num ${isOut(id,mk,v)?'out':''}">${v ?? '-'}</td>`; }).join('')}</tr>`).join('')}
+        </table></div>` : '<div class="muted">완료된 검진 기록이 없어요</div>'}</div>`; }).join('')}`;
+  bindWho();
+  $$('[data-mk]').forEach(b => b.onclick = () => { S.metric = b.dataset.mk; render(); });
+}
+
+// ----- 예방접종 -----
+function viewVax(){
+  const e = S.edit && S.edit._vax ? S.edit : null;
+  const list = vaxes(S.who).sort((a,b) => b.date.localeCompare(a.date));
+  const due = vaxes(S.who).filter(v => v.next).sort((a,b) => a.next.localeCompare(b.next));
+  $('#main').innerHTML = `<div class="row between" style="margin-bottom:14px">${whoSeg()}<button class="btn pri" id="vadd">+ 예방접종</button></div>
+    ${e ? `<form id="vf" class="panel"><h2>${e.id?'예방접종 수정':'예방접종 기록'}</h2><div class="form">
+      <label class="f">누구<select name="who">${PEOPLE().map(id => `<option value="${id}" ${e.who===id?'selected':''}>${esc(mName(id))}</option>`).join('')}</select></label>
+      <label class="f">접종<input name="name" list="vlist" required value="${esc(e.name)}"><datalist id="vlist">${VAX.map(v => `<option value="${v}">`).join('')}</datalist></label>
+      <label class="f">맞은 날<input name="date" type="date" required value="${e.date}"></label>
+      <label class="f">다음 접종 예정일<input name="next" type="date" value="${esc(e.next)}"></label>
+      <label class="f wide">메모<input name="memo" value="${esc(e.memo)}" placeholder="예: 2차 중 1차, OO의원"></label>
+    </div><div class="row" style="margin-top:10px;justify-content:space-between">${e.id?'<button type="button" class="btn danger" id="vdel">삭제</button>':'<span></span>'}
+      <span class="row"><button type="button" class="btn ghost" id="vcancel">취소</button><button class="btn pri">저장</button></span></div></form>` : ''}
+    ${due.length ? `<div class="panel"><h2>다음 접종</h2>${due.map(v => `<div class="kv"><span>${whoTag(v.who)} ${esc(v.name)}</span><span>${md(v.next)} <span class="tag ${v.next < today() ? 'bad' : 'warn'}">${dd(v.next)}</span></span></div>`).join('')}</div>` : ''}
+    <div class="panel"><h2>접종 기록</h2>${list.length ? `<div class="tbl"><table><tr><th>날짜</th><th>누구</th><th>접종</th><th>다음</th><th>메모</th><th></th></tr>
+      ${list.map(v => `<tr><td class="num">${ymd(v.date)}</td><td>${whoTag(v.who)}</td><td>${esc(v.name)}</td><td>${v.next ? md(v.next) : '-'}</td><td style="white-space:normal">${esc(v.memo||'')}</td><td class="r"><button class="btn sm ghost" data-ve="${v.id}">수정</button></td></tr>`).join('')}</table></div>`
+      : '<div class="empty">독감·대상포진 같은 접종 날짜를 적어두면 다음 접종일을 알려줘요</div>'}</div>`;
+  bindWho();
+  $('#vadd').onclick = () => { S.edit = {_vax:true, who: S.who === 'all' ? PEOPLE()[0] : S.who, name:'독감', date:today(), next:'', memo:''}; render(); };
+  $$('[data-ve]').forEach(b => b.onclick = () => { S.edit = {_vax:true, ...S.recs.find(r => r.id === b.dataset.ve)}; render(); window.scrollTo(0,0); });
+  if (e) { const f = $('#vf');
+    f.name.oninput = () => { if (f.name.value === '독감' && !f.next.value && f.date.value) f.next.value = (+f.date.value.slice(0,4) + 1) + '-10-01'; };
+    $('#vcancel').onclick = () => { S.edit = null; render(); };
+    if ($('#vdel')) $('#vdel').onclick = () => { if (confirm('이 접종 기록을 삭제할까요?')) { S.edit = null; remove(e.id); } };
+    f.onsubmit = ev => { ev.preventDefault(); const rec = {id:e.id || uid(), kind:'vax', who:f.who.value, name:f.name.value.trim(), date:f.date.value, next:f.next.value, memo:f.memo.value.trim()};
+      S.edit = null; save(rec, '저장했어요'); }; }
+}
+
+// ----- 비용 -----
+function ledgerCats(){ const c = cfg().ledgerCats; if (Array.isArray(c)) return c; return S.expCats.filter(x => /의료|병원|건강|약/.test(x)); }
+async function loadLedger(){
+  const cats = ledgerCats(), key = S.year + '|' + cats.join(',');
+  if (S.ledger && S.ledger.key === key) return;
+  S.ledger = {key, rows:null};
+  try { const rows = []; for (let off = 0; ; off += 1000) {
+      const part = check(await sb.from('items').select('data').eq('col','entries').gte('data->>date', S.year + '-01-01').lte('data->>date', S.year + '-12-31').range(off, off + 999));
+      rows.push(...part.map(r => r.data)); if (part.length < 1000) break; }
+    S.ledger = {key, rows: rows.filter(x => x.type === 'expense' && cats.includes(x.category))};
+  } catch(e){ S.ledger = {key, rows:[], err:e.message}; }
+  if (S.view === 'cost') render();
+}
+function viewCost(){
+  loadLedger();
+  const L = S.ledger || {}, cats = ledgerCats();
+  const ex = exams('all').filter(e => e.date.startsWith(String(S.year)) && +e.cost);
+  const exSum = ex.reduce((a,e) => a + +e.cost, 0), lgSum = (L.rows||[]).reduce((a,x) => a + +x.amount, 0);
+  const per = {}; ex.forEach(e => per[e.who] = (per[e.who]||0) + +e.cost); (L.rows||[]).forEach(x => per[x.member||'s'] = (per[x.member||'s']||0) + +x.amount);
+  $('#main').innerHTML = `<div class="row between" style="margin-bottom:14px"><div class="seg"><button id="yp">◀</button><button class="on">${S.year}년</button><button id="yn">▶</button></div></div>
+    <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+      <div class="panel" style="margin:0"><div class="muted">검진 추가 비용</div><div style="font-size:22px;font-weight:700" class="num">${won(exSum)}</div></div>
+      <div class="panel" style="margin:0"><div class="muted">가계부 의료비</div><div style="font-size:22px;font-weight:700" class="num">${L.rows ? won(lgSum) : '…'}</div></div>
+      ${Object.entries(per).map(([id,v]) => `<div class="panel" style="margin:0"><div class="muted">${esc(id === 's' ? '공용' : mName(id))}</div><div style="font-size:22px;font-weight:700" class="num">${won(v)}</div></div>`).join('')}</div>
+    <div class="panel" style="margin-top:16px"><h2>검진 추가 비용 <small>검진 기록에 적은 금액</small></h2>${ex.length ? ex.map(e => `<div class="kv"><span>${ymd(e.date)} ${whoTag(e.who)} ${esc(e.type)} ${esc(e.hospital||'')}</span><b class="num">${won(e.cost)}</b></div>`).join('') : '<div class="muted">없어요</div>'}</div>
+    <div class="panel"><h2>가계부에서 가져온 의료비</h2>
+      <div class="chips" style="margin-bottom:10px">${(S.expCats.length ? S.expCats : []).map(c => `<button class="chip ${cats.includes(c)?'on':''}" data-lc="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+      ${!cats.length ? '<div class="muted">어느 카테고리가 의료비인지 위에서 골라주세요. 가계부에 의료비 카테고리가 없으면 가계부 설정에서 만들 수 있어요.</div>'
+        : !L.rows ? '<div class="muted">불러오는 중…</div>' : L.err ? `<div class="muted">불러오지 못했어요: ${esc(L.err)}</div>`
+        : L.rows.length ? `<div class="tbl"><table><tr><th>날짜</th><th>내용</th><th>카테고리</th><th>사람</th><th class="r">금액</th></tr>
+          ${L.rows.sort((a,b) => a.date.localeCompare(b.date)).map(x => `<tr><td class="num">${ymd(x.date)}</td><td style="white-space:normal">${esc(x.detail||'')}</td><td>${esc(x.category)}</td><td>${esc(x.member === 's' || !x.member ? '공용' : mName(x.member))}</td><td class="r num">${won(x.amount)}</td></tr>`).join('')}</table></div>`
+        : `<div class="muted">${S.year}년에 ${esc(cats.join('·'))}로 입력한 지출이 없어요</div>`}</div>`;
+  $('#yp').onclick = () => { S.year--; render(); }; $('#yn').onclick = () => { S.year++; render(); };
+  $$('[data-lc]').forEach(b => b.onclick = () => { const c = JSON.parse(JSON.stringify(cfg())); const cur = ledgerCats(); const v = b.dataset.lc;
+    c.ledgerCats = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]; S.ledger = null; save(c); });
+}
+
+// ----- 설정 -----
+function viewSet(){
+  const c = JSON.parse(JSON.stringify(cfg())); c.people = c.people || {}; c.ranges = c.ranges || {};
+  if (S.who === 'all') S.who = PEOPLE()[0];
+  const who = S.who;
+  $('#main').innerHTML = `<div class="panel"><h2>국가건강검진 대상 연도 <small>일반건강검진은 사무직 2년마다(출생연도 짝·홀과 같은 해), 비사무직은 매년</small></h2>
+      ${PEOPLE().map(id => { const p = c.people[id] || {}; return `<div class="row" style="padding:6px 0"><b style="width:70px">${esc(mName(id))}</b>
+        <label class="f">출생연도<input data-by="${id}" inputmode="numeric" value="${esc(p.birthYear||'')}" placeholder="예: 1992" style="width:110px"></label>
+        <label class="row muted" style="gap:6px;align-self:flex-end;padding-bottom:6px"><input type="checkbox" data-yr="${id}" ${p.yearly?'checked':''}> 매년 대상 (비사무직)</label>
+        <span class="tag" style="align-self:flex-end;margin-bottom:8px">${esc(natl(id).txt)}</span></div>`; }).join('')}
+      <div class="row" style="justify-content:flex-end"><button class="btn pri" id="psave">저장</button></div></div>
+    <div class="panel"><h2>정상 범위 <small>결과지에 적힌 참고치를 옮겨 적으면 벗어난 값을 빨갛게 표시해요</small></h2>
+      <div class="row" style="margin-bottom:10px">${whoSeg(false)}</div>
+      <div class="tbl"><table><tr><th>항목</th><th>단위</th><th>최소</th><th>최대</th></tr>
+      ${METRICS.map(([k,l,u]) => { const r = (c.ranges[who] || {})[k] || {}; return `<tr><td>${l}</td><td class="muted">${u}</td>
+        <td><input data-rmin="${k}" inputmode="decimal" value="${esc(r.min ?? '')}" style="width:90px"></td><td><input data-rmax="${k}" inputmode="decimal" value="${esc(r.max ?? '')}" style="width:90px"></td></tr>`; }).join('')}</table></div>
+      <p class="muted">비워두면 표시하지 않아요. 예: 공복혈당 결과지에 "100 미만"이면 최대 칸에 99를 적으세요.</p>
+      <div class="row" style="justify-content:flex-end"><button class="btn pri" id="rsave">${esc(mName(who))} 범위 저장</button></div></div>`;
+  $$('[data-who]').forEach(b => b.onclick = () => { S.who = b.dataset.who; render(); });
+  $('#psave').onclick = () => { PEOPLE().forEach(id => { c.people[id] = {birthYear: toNum($(`[data-by="${id}"]`).value) || '', yearly: $(`[data-yr="${id}"]`).checked}; }); save(c, '저장했어요'); };
+  $('#rsave').onclick = () => { const r = {}; METRICS.forEach(([k]) => { const a = $(`[data-rmin="${k}"]`).value.trim(), b = $(`[data-rmax="${k}"]`).value.trim();
+      if (a !== '' || b !== '') r[k] = {min: a === '' ? '' : +a, max: b === '' ? '' : +b}; });
+    c.ranges[who] = r; save(c, `${mName(who)}의 정상 범위를 저장했어요`); };
+}
+
+(async () => {
+  if (!sb) { $('#app').innerHTML = `<div class="panel login"><h2>설정이 필요해요</h2><p class="muted">config.js에 Supabase 주소와 키를 넣어주세요.</p></div>`; return; }
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) return renderLogin();
+  try { await load(); subscribe(); }
+  catch(e){ if (e.message !== 'login' && e.message !== 'setup') $('#app').innerHTML = `<div class="panel login">DB에 연결할 수 없어요: ${esc(e.message)}</div>`; }
+})();
+</script>
+</body>
+</html>
