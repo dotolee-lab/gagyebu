@@ -300,7 +300,7 @@ function render(){
   document.title = nm;
   const tabs = [['home','홈'],['fuel','주유'],['maint','정비·소모품'],['docs','서류·일정'],['cost','비용']];
   $('#app').innerHTML = `<header><div class="top"><h1>🐿️ ${esc(nm)}</h1>
-      <span class="switch"><a href="index.html">가계부</a><a href="travel.html">여행</a><a href="health.html">건강</a><a class="on">다람이</a>${S.toto ? '<a href="toto.html" title="따로 로그인">도토리 방앗간</a>' : ''}<a class="more" onclick="this.parentNode.classList.toggle('open')">▾</a></span>
+      <span class="switch"><a href="index.html">가계부</a><a href="travel.html">여행</a><a href="health.html">건강</a><a class="on">다람이</a><a href="kitchen.html">큩토리 부엌</a>${S.toto ? '<a href="toto.html" title="따로 로그인">도토리 방앗간</a>' : ''}<a class="more" onclick="this.parentNode.classList.toggle('open')">▾</a></span>
       <span class="sync">${S.syncedAt ? '동기화 ' + S.syncedAt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : ''} · <a href="#" id="logout">로그아웃</a></span></div>
     <nav>${tabs.map(([k,l]) => `<button data-v="${k}" class="${S.view===k?'on':''}">${l}</button>`).join('')}</nav></header><main id="main"></main>`;
   $('#logout').onclick = async e => { e.preventDefault(); await sb.auth.signOut(); location.href = 'index.html'; };

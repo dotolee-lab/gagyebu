@@ -251,7 +251,7 @@ function render(){
   if (S.cur && !trip()) S.cur = null;
   document.title = S.cur ? `${trip().title} · 우리 여행` : '우리 여행';
   $('#app').innerHTML = `<header><div class="top"><h1>우리 여행</h1>
-      <span class="switch"><a href="index.html">가계부</a><a class="on">여행</a><a href="health.html">건강</a><a href="car.html">다람이${S.carDot?'<i class="dot"></i>':''}</a>${S.toto ? '<a href="toto.html" title="따로 로그인">도토리 방앗간</a>' : ''}<a class="more" onclick="this.parentNode.classList.toggle('open')">▾${S.carDot?'<i class="dot"></i>':''}</a></span>
+      <span class="switch"><a href="index.html">가계부</a><a class="on">여행</a><a href="health.html">건강</a><a href="car.html">다람이${S.carDot?'<i class="dot"></i>':''}</a><a href="kitchen.html">큩토리 부엌</a>${S.toto ? '<a href="toto.html" title="따로 로그인">도토리 방앗간</a>' : ''}<a class="more" onclick="this.parentNode.classList.toggle('open')">▾${S.carDot?'<i class="dot"></i>':''}</a></span>
       <span class="sync">${S.syncedAt ? '동기화 ' + S.syncedAt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : ''}
       · <a href="#" id="logout">로그아웃</a></span></div></header>
     <main id="main"></main>`;
