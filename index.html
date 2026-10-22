@@ -349,7 +349,7 @@ function render(){
   if (!S.month) S.month = cycleOf({type:'expense', date: today()});
   if (!S.year) S.year = +S.month.slice(0,4);
   document.title = set().title || '가계부';
-  const tabs = [['dash','이번 달'],['list','내역'],['shared','공동생활비'],['rec','고정지출'],['year','연간 결산'],['set','설정']];
+  const tabs = [['dash','이번 달'],['list','내역'],['shared','공동생활비'],['rec','고정지출'],['loan','대출'],['year','연간 결산'],['set','설정']];
   const unsettled = S.data.entries.filter(needsSettle).length;
   $('#app').innerHTML = `<header><div class="top"><h1>${esc(set().title)}</h1><span class="switch"><a class="on">가계부</a><a href="travel.html">여행</a><a href="health.html">건강</a><a href="car.html">다람이${S.carDot?'<i class="dot"></i>':''}</a><a href="kitchen.html">큩토리 부엌</a>${S.toto ? `<a href="toto.html" title="따로 로그인">도토리 방앗간</a>` : ''}<a class="more" onclick="this.parentNode.classList.toggle('open')">▾${S.carDot?'<i class="dot"></i>':''}</a></span>
       <span class="sync">${S.syncedAt ? '동기화 ' + S.syncedAt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : ''}
@@ -359,7 +359,7 @@ function render(){
   document.body.classList.toggle('wide', S.view === 'year');
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.view = b.dataset.v; S.edit = null; S.catEdit = null; if (S.pending) pull(true); else render(); });
   $('#logout').onclick = async ev => { ev.preventDefault(); await sb.auth.signOut(); S.data=null; renderLogin(); };
-  ({dash:viewDash, list:viewList, shared:viewShared, rec:viewRec, year:viewYear, set:viewSet})[S.view]();
+  ({dash:viewDash, list:viewList, shared:viewShared, rec:viewRec, loan:viewLoan, year:viewYear, set:viewSet})[S.view]();
 }
 
 function monthPicker(){
@@ -910,6 +910,101 @@ function viewYear(){
     const csv = [['항목', ...months.map((_,i)=>`${i+1}월`), '연간']].concat(rows.map(r => r.grp ? [r.label] : [strip(r.label), ...r.v, r.total]));
     download(`가계부_${Y}_결산.csv`, csv);
   };
+}
+
+// ===== 대출 =====
+// 설정(settings.loans)에 저장해요. 상환은 직접 적는 방식이에요.
+const LOAN_TYPES = ['주택담보대출','전세자금대출','신용대출','자동차 할부','학자금대출','마이너스통장','기타'];
+const REPAY = ['원리금균등','원금균등','만기일시','자유상환'];
+const loans = () => set().loans || (set().loans = []);
+const paidPrin = l => (l.payments||[]).reduce((a,p) => a + (+p.principal||0), 0);
+const loanLeft = l => Math.max(0, (+l.startBalance || +l.amount || 0) - paidPrin(l));
+function nextPay(l){ if (!+l.payDay) return null; const t = today(); let [y,m] = t.split('-').map(Number);
+  for (let i = 0; i < 2; i++) { const last = new Date(y, m, 0).getDate(); const d = `${y}-${String(m).padStart(2,'0')}-${String(Math.min(+l.payDay, last)).padStart(2,'0')}`;
+    if (d >= t) return d; m++; if (m > 12) { m = 1; y++; } } return null; }
+const daysTo = d => Math.round((new Date(d + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 86400000);
+function viewLoan(){
+  const ls = loans(), e = S.edit && S.edit._loan ? S.edit : null, pe = S.edit && S.edit._pay ? S.edit : null;
+  const active = ls.filter(l => loanLeft(l) > 0 && !l.closed);
+  const totalLeft = active.reduce((a,l) => a + loanLeft(l), 0);
+  const monthly = active.reduce((a,l) => a + (+l.monthly||0), 0);
+  const y = today().slice(0,4);
+  const intYear = ls.reduce((a,l) => a + (l.payments||[]).filter(p => p.date.startsWith(y)).reduce((b,p) => b + (+p.interest||0), 0), 0);
+  const members = set().members.map(m => [m.id, m.name]).concat([['s','공용']]);
+  const loanForm = () => `<form id="lf2" class="panel" style="border-color:var(--accent)"><h2>${e.id ? '대출 수정' : '대출 추가'}</h2><div class="form">
+      <label class="f">이름<input name="name" required value="${esc(e.name||'')}" placeholder="예: 아파트 주담대"></label>
+      <label class="f">종류<select name="kind">${LOAN_TYPES.map(t => `<option ${e.kind===t?'selected':''}>${t}</option>`).join('')}</select></label>
+      <label class="f">은행·기관<input name="lender" value="${esc(e.lender||'')}" placeholder="예: 신한은행"></label>
+      <label class="f">누구 명의<select name="who">${members.map(([id,n]) => `<option value="${id}" ${e.who===id?'selected':''}>${esc(n)}</option>`).join('')}</select></label>
+      <label class="f">빌린 금액<input name="amount" inputmode="numeric" required value="${+e.amount ? won(e.amount) : ''}"></label>
+      <label class="f">지금 남은 원금<input name="startBalance" inputmode="numeric" value="${+e.startBalance ? won(e.startBalance) : ''}" placeholder="비우면 빌린 금액"></label>
+      <label class="f">금리 (%)<input name="rate" inputmode="decimal" value="${esc(e.rate||'')}" placeholder="예: 3.85"></label>
+      <label class="f">상환 방식<select name="method">${REPAY.map(t => `<option ${e.method===t?'selected':''}>${t}</option>`).join('')}</select></label>
+      <label class="f">대출일<input name="start" type="date" value="${esc(e.start||'')}"></label>
+      <label class="f">만기일<input name="end" type="date" value="${esc(e.end||'')}"></label>
+      <label class="f">매달 내는 날<input name="payDay" type="number" min="1" max="31" value="${esc(e.payDay||'')}"></label>
+      <label class="f">월 상환액 (대략)<input name="monthly" inputmode="numeric" value="${+e.monthly ? won(e.monthly) : ''}" placeholder="원금+이자"></label>
+      <label class="f" style="grid-column:1/-1">메모<input name="memo" value="${esc(e.memo||'')}" placeholder="예: 금리 변동 6개월마다, 중도상환수수료 3년 후 면제"></label>
+    </div><p class="muted">"지금 남은 원금"은 이미 갚아온 대출을 중간부터 기록할 때 은행 앱에 나오는 잔액을 넣으면 돼요. 이후엔 상환 기록의 원금만큼 줄어들어요.</p>
+    <div class="row" style="margin-top:10px;justify-content:space-between">${e.id ? `<span class="row"><button type="button" class="btn danger" id="ldel">삭제</button><button type="button" class="btn" id="lclose">${e.closed?'다시 진행 중으로':'다 갚음 처리'}</button></span>` : '<span></span>'}
+      <span class="row"><button type="button" class="btn ghost" id="lcancel">취소</button><button class="btn pri">저장</button></span></div></form>`;
+  const payForm = l => `<form id="pf2" class="panel" style="border-color:var(--accent);margin:10px 0 0"><div class="form">
+      <label class="f">날짜<input name="date" type="date" required value="${esc(pe.date)}"></label>
+      <label class="f">원금<input name="principal" inputmode="numeric" value="${+pe.principal ? won(pe.principal) : ''}"></label>
+      <label class="f">이자<input name="interest" inputmode="numeric" value="${+pe.interest ? won(pe.interest) : ''}"></label>
+      <label class="f">메모<input name="memo" value="${esc(pe.memo||'')}" placeholder="예: 중도상환"></label>
+    </div><div class="row" style="margin-top:10px;justify-content:space-between">${pe.id ? '<button type="button" class="btn danger" id="pdel">삭제</button>' : '<span class="muted">은행 앱의 상환 내역(원금·이자)을 보고 적어주세요</span>'}
+      <span class="row"><button type="button" class="btn ghost" id="pcancel">취소</button><button class="btn pri">저장</button></span></div></form>`;
+  const card = l => { const left = loanLeft(l), base = +l.amount || +l.startBalance || 0, done = base ? (base - left) / base * 100 : 0;
+    const np = nextPay(l), pays = (l.payments||[]).slice().sort((a,b) => b.date.localeCompare(a.date));
+    const intAll = pays.reduce((a,p) => a + (+p.interest||0), 0), mLeft = l.end ? Math.max(0, Math.ceil(daysTo(l.end) / 30.44)) : null;
+    return `<div class="panel" style="${l.closed || !left ? 'opacity:.6' : ''}"><div class="row" style="justify-content:space-between">
+        <div><b style="font-size:16px">${esc(l.name)}</b> <span class="tag ${l.who||'s'}">${esc(memberName(l.who||'s'))}</span> <span class="muted">${esc([l.kind, l.lender, l.rate ? l.rate + '%' : '', l.method].filter(Boolean).join(' · '))}</span></div>
+        <span class="row"><button class="btn sm pri" data-pay="${l.id}">+ 상환 기록</button><button class="btn sm ghost" data-le="${l.id}">수정</button></span></div>
+      <div class="row" style="justify-content:space-between;margin-top:10px"><div><span class="muted">남은 원금</span> <b style="font-size:20px" class="num">${won(left)}</b> <span class="muted">/ ${won(base)}</span></div>
+        <span class="muted">${l.closed || !left ? '<span class="tag ok">다 갚았어요 🎉</span>' : [np ? `다음 상환 ${+np.slice(5,7)}/${+np.slice(8)} (${daysTo(np) ? 'D-' + daysTo(np) : '오늘'})` : '', l.end ? `만기 ${l.end.slice(2).replace(/-/g,'.')} · ${mLeft}개월 남음` : ''].filter(Boolean).join(' · ')}</span></div>
+      <div class="bar" style="margin-top:8px"><i style="width:${Math.min(100, done)}%"></i></div>
+      <div class="muted" style="margin-top:4px">${Math.round(done)}% 갚음${+l.monthly ? ` · 월 약 ${won(l.monthly)}원` : ''}${intAll ? ` · 지금까지 낸 이자 ${won(intAll)}원` : ''}${l.memo ? ' · ' + esc(l.memo) : ''}</div>
+      ${pe && pe.lid === l.id ? payForm(l) : ''}
+      ${pays.length ? `<details style="margin-top:10px" ${S.openLoan === l.id ? 'open' : ''} data-det="${l.id}"><summary class="muted" style="cursor:pointer">상환 기록 ${pays.length}건</summary>
+        <div class="tbl" style="margin-top:6px;max-height:320px"><table style="min-width:0"><tr><th>날짜</th><th class="num">원금</th><th class="num">이자</th><th class="num">합계</th><th>메모</th><th></th></tr>
+        ${pays.map(p => `<tr><td class="nw">${p.date.slice(2).replace(/-/g,'.')}</td><td class="num">${won(p.principal)}</td><td class="num">${won(p.interest)}</td><td class="num"><b>${won((+p.principal||0)+(+p.interest||0))}</b></td><td>${esc(p.memo||'')}</td>
+          <td class="nw"><button class="btn sm ghost" data-pe="${l.id}|${p.id}">수정</button></td></tr>`).join('')}</table></div></details>` : ''}</div>`; };
+  $('#main').innerHTML = `<div class="grid kpis" style="margin-bottom:16px">
+      <div class="kpi"><div class="l">남은 대출 원금</div><div class="v t-expense">${won(totalLeft)}</div><div class="s">진행 중 ${active.length}건</div></div>
+      <div class="kpi"><div class="l">월 상환액 (대략)</div><div class="v">${won(monthly)}</div><div class="s">대출마다 적은 월 상환액 합계</div></div>
+      <div class="kpi"><div class="l">${y}년 낸 이자</div><div class="v">${won(intYear)}</div><div class="s">상환 기록의 이자 합계</div></div></div>
+    <div class="row" style="justify-content:flex-end;margin-bottom:12px"><button class="btn pri" id="ladd">+ 대출 추가</button></div>
+    ${e ? loanForm() : ''}
+    ${ls.length ? ls.slice().sort((a,b) => (!!a.closed || !loanLeft(a)) - (!!b.closed || !loanLeft(b))).map(card).join('') : '<div class="panel empty">받은 대출을 추가하면 남은 원금과 상환 기록을 볼 수 있어요</div>'}`;
+  $('#ladd').onclick = () => { S.edit = {_loan:true, who:'s', kind:'주택담보대출', method:'원리금균등'}; render(); };
+  document.querySelectorAll('[data-le]').forEach(b => b.onclick = () => { S.edit = {_loan:true, ...ls.find(l => l.id === b.dataset.le)}; render(); window.scrollTo(0,0); });
+  document.querySelectorAll('[data-det]').forEach(d => d.ontoggle = () => { S.openLoan = d.open ? d.dataset.det : null; });
+  document.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => { const l = ls.find(x => x.id === b.dataset.pay);
+    const last = (l.payments||[]).slice().sort((a,b) => b.date.localeCompare(a.date))[0];
+    S.edit = {_pay:true, lid:l.id, date:nextPay(l) && daysTo(nextPay(l)) <= 3 ? nextPay(l) : today(), principal:last ? last.principal : 0, interest:last ? last.interest : 0, memo:''}; render(); });
+  document.querySelectorAll('[data-pe]').forEach(b => b.onclick = () => { const [lid, pid] = b.dataset.pe.split('|'); const l = ls.find(x => x.id === lid);
+    S.edit = {_pay:true, lid, ...l.payments.find(p => p.id === pid)}; S.openLoan = lid; render(); });
+  const money = f => f.querySelectorAll('[inputmode=numeric]').forEach(i => i.oninput = () => { const n = i.value.replace(/[^\d]/g,''); i.value = n ? (+n).toLocaleString('ko-KR') : ''; });
+  const num = v => +String(v||'').replace(/[^\d]/g,'') || 0;
+  if (e) { const f = $('#lf2'); money(f);
+    $('#lcancel').onclick = () => { S.edit = null; render(); };
+    if ($('#ldel')) $('#ldel').onclick = () => { if (confirm(`'${e.name}' 대출과 상환 기록을 모두 삭제할까요?`)) { set().loans = ls.filter(l => l.id !== e.id); S.edit = null; saveSettings('대출을 삭제했어요'); } };
+    if ($('#lclose')) $('#lclose').onclick = () => { const l = ls.find(x => x.id === e.id); l.closed = !l.closed; S.edit = null; saveSettings(l.closed ? '다 갚은 대출로 옮겼어요 🎉' : '진행 중으로 바꿨어요'); };
+    f.onsubmit = ev => { ev.preventDefault();
+      const rec = {id:e.id || uid(), name:f.name.value.trim(), kind:f.kind.value, lender:f.lender.value.trim(), who:f.who.value, amount:num(f.amount.value), startBalance:num(f.startBalance.value),
+        rate:f.rate.value.trim(), method:f.method.value, start:f.start.value, end:f.end.value, payDay:+f.payDay.value || '', monthly:num(f.monthly.value), memo:f.memo.value.trim(),
+        payments:e.payments || [], closed:!!e.closed};
+      const i = ls.findIndex(l => l.id === rec.id); if (i >= 0) ls[i] = rec; else ls.push(rec);
+      S.edit = null; saveSettings(e.id ? '대출 정보를 고쳤어요' : '대출을 추가했어요'); }; }
+  if (pe) { const f = $('#pf2'); money(f); const l = ls.find(x => x.id === pe.lid);
+    $('#pcancel').onclick = () => { S.edit = null; render(); };
+    if ($('#pdel')) $('#pdel').onclick = () => { if (confirm('이 상환 기록을 삭제할까요?')) { l.payments = l.payments.filter(p => p.id !== pe.id); S.edit = null; saveSettings('삭제했어요'); } };
+    f.onsubmit = ev => { ev.preventDefault();
+      const p = {id:pe.id || uid(), date:f.date.value, principal:num(f.principal.value), interest:num(f.interest.value), memo:f.memo.value.trim()};
+      if (!p.principal && !p.interest) return toast('원금이나 이자를 적어주세요');
+      l.payments = (l.payments||[]).filter(x => x.id !== p.id).concat(p);
+      S.edit = null; S.openLoan = l.id; saveSettings(`상환 ${won(p.principal + p.interest)}원을 기록했어요 · 남은 원금 ${won(loanLeft(l))}원`); }; }
 }
 
 // ===== 설정 =====
