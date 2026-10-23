@@ -1,0 +1,22 @@
+{
+  "name": "보무리 도토리 가계부",
+  "short_name": "도토리 가계부",
+  "description": "동현·보미의 가계부 · 여행 · 건강 · 다람이 · 큩토리 부엌",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fdf8f0",
+  "theme_color": "#f6f4ef",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "여행", "url": "./travel.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "다람이", "url": "./car.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "큩토리 부엌", "url": "./kitchen.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}
