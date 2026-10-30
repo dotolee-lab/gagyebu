@@ -1125,6 +1125,12 @@ function viewSalary(){
     const rec = sal.find(x => x.who === wid && +x.year === 2026);
     if (rec && !rec.detail) { const d = JSON.parse(JSON.stringify(SAL_SEED_W2026)); d.items.forEach(it => { it.id = uid(); it.m = it.m.map(v => v || ''); }); rec.detail = d; }
     set().salaryRestoreW2026 = true; saveSettings(rec && rec.detail ? `${memberName(wid)} 2026년 급여표를 되살렸어요` : undefined); return; }
+  // 보미 급여표는 세전 금액 → 표 합계가 연봉(세전)으로 자동, 세후는 직접 입력 (한 번만)
+  if (!set().salaryWGross) { const wid = (set().members.find(m => m.id === 'w') || set().members[1] || {}).id;
+    sal.filter(x => x.who === wid && x.detail).forEach(x => { x.detail.basis = 'gross'; if (+x.netYear === detTotal(x.detail)) x.netYear = 0; x.gross = detTotal(x.detail); });
+    set().salaryWGross = true; saveSettings(`${memberName(wid)} 급여표를 세전으로 바꿨어요 — 세후는 「수정」에서 적어주세요`); return; }
+  const tableGross = x => x && x.detail && x.detail.basis === 'gross' ? detTotal(x.detail) : 0;
+  const grossOf = x => x ? (tableGross(x) || +x.gross || 0) : 0;   // 세전 급여표가 있으면 표 합계가 연봉(세전)
   const tableNet = x => x && x.detail && x.detail.basis !== 'gross' ? detTotal(x.detail) : 0;   // 급여표(세후) 연간 합계
   const netYear = x => x ? (+x.netYear || tableNet(x)) : 0;   // 직접 적은 연 실수령이 있으면 그걸, 없으면 급여표 합계
   const e = S.edit && S.edit._sal ? S.edit : null;
@@ -1136,13 +1142,13 @@ function viewSalary(){
   const pct = (a, b) => a && b ? Math.round((a - b) / b * 1000) / 10 : null;
   const pctTag = v => v == null ? '' : `<span class="tag ${v >= 0 ? 'ok' : 'warn'}">${v >= 0 ? '▲' : '▼'} ${Math.abs(v)}%</span>`;
   const latest = id => sal.filter(x => x.who === id).sort((a,b) => b.year - a.year)[0];
-  const total = set().members.reduce((a,m) => a + (+(latest(m.id)||{}).gross || 0), 0);
+  const total = set().members.reduce((a,m) => a + grossOf(latest(m.id)), 0);
   const totalNet = set().members.reduce((a,m) => a + netYear(latest(m.id)), 0);
   $('#main').innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:14px"><span class="muted">연봉 계약서·급여명세서 숫자를 연도별로 적어두는 곳이에요</span><button class="btn pri" id="sadd">+ 연봉 기록</button></div>
     ${e ? `<form id="sf" class="panel" style="border-color:var(--accent)"><h2>${e.id ? '연봉 수정' : '연봉 기록'}</h2><div class="form">
       <label class="f">누구<select name="who">${set().members.map(m => `<option value="${m.id}" ${e.who===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
       <label class="f">연도<input name="year" type="number" min="2000" max="2100" required value="${esc(e.year)}"></label>
-      <label class="f">연봉 (세전)<input name="gross" inputmode="numeric" value="${+e.gross ? won(e.gross) : ''}"></label>
+      <label class="f">연봉 (세전)${tableGross(e) ? ' — 급여표 합계로 자동' : ''}<input name="gross" inputmode="numeric" value="${grossOf(e) ? won(grossOf(e)) : ''}" ${tableGross(e) ? 'readonly style="opacity:.6"' : ''}></label>
       <label class="f">연 실수령 (세후)<input name="netYear" inputmode="numeric" value="${+e.netYear ? won(e.netYear) : ''}" placeholder="${tableNet(e) ? '비우면 급여표 합계 ' + won(tableNet(e)) : '1년 동안 받은 세후 금액'}"></label>
       <label class="f">월 실수령액<input name="net" inputmode="numeric" value="${+e.net ? won(e.net) : ''}" placeholder="급여명세서 차인지급액"></label>
       <label class="f">성과급·상여 (연간)<input name="bonus" inputmode="numeric" value="${+e.bonus ? won(e.bonus) : ''}"></label>
@@ -1153,17 +1159,17 @@ function viewSalary(){
       <span class="row"><button type="button" class="btn ghost" id="scancel">취소</button><button class="btn pri">저장</button></span></div></form>` : ''}
     <div class="grid kpis" style="margin-bottom:16px">
       ${set().members.map(m => { const l = latest(m.id), pv = l && recOf(m.id, l.year - 1);
-        const g = l && +l.gross, n = netYear(l);
+        const g = grossOf(l), n = netYear(l);
         return `<div class="kpi"><div class="l"><span class="tag ${m.id}">${esc(m.name)}</span> ${l ? l.year + (g ? '년 연봉(세전)' : n ? '년 실수령(세후)' : '년') : ''}</div><div class="v">${g ? won(g) : n ? won(n) : '-'}</div>
-          <div class="s">${l ? [g && pv && +pv.gross ? pctTag(pct(g, +pv.gross)) : '', g && n ? '세후 ' + won(n) : '', +l.net ? '월 실수령 ' + won(l.net) : ''].filter(Boolean).join(' · ') : '「+ 연봉 기록」으로 넣어주세요'}</div></div>`; }).join('')}
+          <div class="s">${l ? [g && grossOf(pv) ? pctTag(pct(g, grossOf(pv))) : '', g && n ? '세후 ' + won(n) : '', +l.net ? '월 실수령 ' + won(l.net) : ''].filter(Boolean).join(' · ') : '「+ 연봉 기록」으로 넣어주세요'}</div></div>`; }).join('')}
       <div class="kpi"><div class="l">둘이 합친 금액</div><div class="v">${total ? won(total) : won(totalNet)}</div><div class="s">${total ? `세전 연봉 합계${totalNet ? ' · 세후 ' + won(totalNet) : ''}` : '세후(급여표) 합계'} · 각자 최근 연도</div></div></div>
     ${set().members.map(m => { const rows = sal.filter(x => x.who === m.id).sort((a,b) => b.year - a.year);
       const years = [...new Set(rows.map(x => +x.year).concat([thisY]))].sort((a,b) => b - a);
       return `<div class="panel"><h2><span class="tag ${m.id}" style="font-size:14px">${esc(m.name)}</span> <small>연도별</small></h2>
         <div class="tbl" style="max-height:none;border:0"><table style="min-width:0"><tr><th>연도</th><th class="num">연봉(세전)</th><th class="num">실수령(세후)</th><th class="num">인상률</th><th class="num">월 실수령</th><th class="num">성과급·상여</th><th class="num">연말정산</th><th class="num">가계부 실제 수입</th><th>메모</th><th></th></tr>
         ${years.map(y => { const x = recOf(m.id, y), pv = recOf(m.id, y - 1), inc = incomeOf(m.id, y), incSal = incomeOf(m.id, y, true);
-          const pr = x && pv ? (+x.gross && +pv.gross ? pct(+x.gross, +pv.gross) : netYear(x) && netYear(pv) ? pct(netYear(x), netYear(pv)) : null) : null;
-          return `<tr><td class="nw"><b>${y}</b></td><td class="num">${x && +x.gross ? won(x.gross) : '<span class="muted">-</span>'}</td><td class="num">${netYear(x) ? won(netYear(x)) : x ? '' : '<span class="muted">-</span>'}</td><td class="num">${pctTag(pr)}</td>
+          const pr = x && pv ? (grossOf(x) && grossOf(pv) ? pct(grossOf(x), grossOf(pv)) : netYear(x) && netYear(pv) ? pct(netYear(x), netYear(pv)) : null) : null;
+          return `<tr><td class="nw"><b>${y}</b></td><td class="num">${grossOf(x) ? won(grossOf(x)) : '<span class="muted">-</span>'}</td><td class="num">${netYear(x) ? won(netYear(x)) : x ? '' : '<span class="muted">-</span>'}</td><td class="num">${pctTag(pr)}</td>
             <td class="num">${x && +x.net ? won(x.net) : ''}</td><td class="num">${x && +x.bonus ? won(x.bonus) : ''}</td>
             <td class="num">${x && +x.tax ? `<span style="color:${x.tax > 0 ? 'var(--inc)' : 'var(--exp)'}">${x.tax > 0 ? '+' : '−'}${won(Math.abs(x.tax))}</span>` : ''}</td>
             <td class="num" title="월급 ${won(incSal)} · 그 외 ${won(inc - incSal)}">${inc ? won(inc) : ''}${inc && incSal !== inc ? `<div class="muted" style="font-size:11px">월급 ${won(incSal)}</div>` : ''}</td>
@@ -1183,7 +1189,7 @@ function viewSalary(){
   $('#sadd').onclick = () => { S.edit = {_sal:true, who:set().members[0].id, year:thisY}; render(); };
   document.querySelectorAll('[data-se]').forEach(b => b.onclick = () => { S.edit = {_sal:true, ...sal.find(x => x.id === b.dataset.se)}; render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-snew]').forEach(b => b.onclick = () => { const [who, y] = b.dataset.snew.split('|'); const pv = recOf(who, +y - 1);
-    S.edit = {_sal:true, who, year:+y, gross: pv ? pv.gross : ''}; render(); window.scrollTo(0,0); });
+    S.edit = {_sal:true, who, year:+y, gross: pv ? grossOf(pv) : ''}; render(); window.scrollTo(0,0); });
   const numv = v => +String(v||'').replace(/[^\d]/g,'') || 0;
   document.querySelectorAll('[data-sy]').forEach(sel => sel.onchange = () => { S.salY[sel.dataset.sy] = +sel.value; S.salEdit = null; render(); });
   document.querySelectorAll('[data-gedit]').forEach(b => b.onclick = () => { const [who, y] = b.dataset.gedit.split('|'); S.salEdit = {who, year:+y, d:JSON.parse(JSON.stringify(recOf(who, y).detail))}; render(); });
@@ -1214,7 +1220,7 @@ function viewSalary(){
     document.querySelectorAll('[data-gsave]').forEach(b => b.onclick = () => { readGrid(); const d = se.d;
       d.items = d.items.filter(it => it.name || it.m.some(v => +v));
       let rec = recOf(se.who, se.year); if (!rec) { rec = {id:uid(), who:se.who, year:se.year, gross:0, net:0, bonus:0, tax:0, memo:''}; sal.push(rec); }
-      rec.detail = d; if (d.basis === 'gross' && !+rec.gross) rec.gross = detTotal(d);
+      rec.detail = d; if (d.basis === 'gross') rec.gross = detTotal(d);
       S.salEdit = null; saveSettings(`${memberName(se.who)} ${se.year}년 급여표를 저장했어요 · 합계 ${won(detTotal(d))}원`); });
   }
   if (e) { const f = $('#sf'), num = v => +String(v||'').replace(/[^\d]/g,'') || 0;
@@ -1222,7 +1228,7 @@ function viewSalary(){
     $('#scancel').onclick = () => { S.edit = null; render(); };
     if ($('#sdel')) $('#sdel').onclick = () => { if (confirm(`${memberName(e.who)} ${e.year}년 연봉 기록을 지울까요?`)) { set().salary = sal.filter(x => x.id !== e.id); S.edit = null; saveSettings('지웠어요'); } };
     f.onsubmit = ev => { ev.preventDefault();
-      const rec = {id:e.id || uid(), who:f.who.value, year:+f.year.value, gross:num(f.gross.value), netYear:num(f.netYear.value), net:num(f.net.value), bonus:num(f.bonus.value), tax:num(f.tax.value) * +f.taxSign.value, memo:f.memo.value.trim()};
+      const rec = {id:e.id || uid(), who:f.who.value, year:+f.year.value, gross:tableGross(e) || num(f.gross.value), netYear:num(f.netYear.value), net:num(f.net.value), bonus:num(f.bonus.value), tax:num(f.tax.value) * +f.taxSign.value, memo:f.memo.value.trim()};
       const dup = sal.find(x => x.who === rec.who && +x.year === rec.year && x.id !== rec.id);
       if (dup && !confirm(`${memberName(rec.who)} ${rec.year}년 기록이 이미 있어요. 덮어쓸까요?`)) return;
       // 월별 급여표는 연봉 정보 수정과 상관없이 그대로 지켜요
