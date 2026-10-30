@@ -182,12 +182,20 @@ function cycleRange(month){
 // 공동생활비에서 나간 지출: 공동생활비 카드로 결제했거나, '공용' + 공동생활비 카테고리(기본: 생활비)
 // 개인(정산) 그룹 카테고리: 카드와 상관없이 그 사람이 나중에 채워 넣을 돈 → 정산 대기, 우리집 총지출에서 제외
 const PERSONAL_GROUP = '개인(정산)';
-const isPersonal = e => e.type === 'expense' && groupOf('expense', e.category) === PERSONAL_GROUP;
+// 공동생활비 카드로 결제했지만 사람이 동현/보미로 되어 있으면 그 사람 개인 몫이에요.
+// → 공동생활비 사용·생활비가 아니라 그 사람 용돈에서 나갈 돈이라, 정산 대기로만 잡고 생활비·총지출에는 넣지 않아요.
+const personalShare = e => e.type === 'expense' && e.category !== '공동생활비' && e.member && e.member !== 's' && isSharedPM(e.payMethod);
+const isPersonal = e => e.type === 'expense' && (groupOf('expense', e.category) === PERSONAL_GROUP || personalShare(e));
+// 화면에서 묶을 그룹: 개인 몫은 카테고리와 상관없이 '개인(정산)'
+const grpOf = e => isPersonal(e) ? PERSONAL_GROUP : groupOf(e.type, e.category);
+// 개인 몫은 그 사람의 '○○ 개인' 카테고리로 보여줘요
+const catKey = e => { if (!personalShare(e) || groupOf('expense', e.category) === PERSONAL_GROUP) return e.category;
+  const c = cats('expense').find(c => c.group === PERSONAL_GROUP && personOfCat(c.name) === e.member); return c ? c.name : e.category; };
 const fromSharedFund = e => e.type === 'expense' && e.category !== '공동생활비' && !isPersonal(e) &&
   (isSharedPM(e.payMethod) || (e.member === 's' && (set().sharedFundCats || []).includes(e.category)));
 // 공동생활비로 넣은 돈에서 나간 지출은 총지출에 두 번 더하지 않음
 const countsInTotal = e => !fromSharedFund(e) && !isPersonal(e);
-const needsSettle = e => e.type === 'expense' && !e.settled && (isPersonal(e) || (isSharedPM(e.payMethod) && e.member !== 's'));
+const needsSettle = e => e.type === 'expense' && !e.settled && isPersonal(e);
 // 카테고리 이름에 구성원 이름이 들어 있으면 그 사람 몫 (예: '동현 개인')
 const personOfCat = name => (set().members.find(m => name.includes(m.name)) || {}).id;
 
@@ -384,7 +392,7 @@ function viewDash(){
   const diff = (a,b) => !b ? '' : a===b ? '지난달과 같음' : `${a>b?'▲':'▼'} 지난달보다 ${won(Math.abs(a-b))}`;
   // 카테고리별 지출 (공동카드 사용분 제외)
   const byCat = {};
-  list.filter(e => e.type==='expense').forEach(e => byCat[e.category] = (byCat[e.category]||0) + +e.amount);
+  list.filter(e => e.type==='expense').forEach(e => byCat[catKey(e)] = (byCat[catKey(e)]||0) + +e.amount);
   const budgets = set().budgets;
   const catRows = cats('expense').map(c => ({name:c.name, group:c.group, spent:byCat[c.name]||0, budget:+budgets[c.name]||0}))
     .filter(r => r.spent || r.budget);
@@ -529,7 +537,7 @@ function viewList(){
   let list = tabSum(T);
   // 지출 탭의 그룹 칩: 고정비1 / 고정비2 / 변동비 … / 공동생활비 사용
   const expGroups = [...new Set(cats('expense').map(c => c.group))];
-  if (T === 'expense' && F.grp && F.grp !== 'all') list = F.grp === '__shared' ? list.filter(fromSharedFund) : list.filter(e => groupOf('expense', e.category) === F.grp && !fromSharedFund(e));
+  if (T === 'expense' && F.grp && F.grp !== 'all') list = F.grp === '__shared' ? list.filter(fromSharedFund) : list.filter(e => grpOf(e) === F.grp && !fromSharedFund(e));
   if (F.member!=='all') list = list.filter(e => e.member===F.member);
   if (F.cat!=='all') list = list.filter(e => e.category===F.cat);
   if (F.q) { const q = F.q.toLowerCase(); list = list.filter(e => [e.detail,e.memo,e.category,e.payMethod].join(' ').toLowerCase().includes(q)); }
@@ -541,7 +549,7 @@ function viewList(){
   const tabTotal = t => { const l = tabSum(t); return t === 'expense' ? sumOf(l.filter(countsInTotal)) : sumOf(l); };
   const exp = tabSum('expense');
   const grpChips = T !== 'expense' ? '' : `<div class="chips" style="margin-bottom:10px">
-      ${[['all','전체', sumOf(exp.filter(countsInTotal))], ...expGroups.map(g => [g, g, sumOf(exp.filter(e => !fromSharedFund(e) && groupOf('expense', e.category) === g))]),
+      ${[['all','전체', sumOf(exp.filter(countsInTotal))], ...expGroups.map(g => [g, g, sumOf(exp.filter(e => !fromSharedFund(e) && grpOf(e) === g))]),
          ['__shared','공동생활비 사용', sumOf(exp.filter(fromSharedFund))]]
         .map(([k,l,v]) => `<button class="chip" data-g="${esc(k)}" style="cursor:pointer;padding:4px 12px;${(F.grp||'all')===k?'background:var(--ink);color:var(--bg);border-color:var(--ink)':''}">${esc(l)} <b class="num">${won(v)}</b></button>`).join('')}
     </div>`;
@@ -607,7 +615,7 @@ function viewShared(){
       <div class="kpi"><div class="l">공동생활비로 쓴 돈</div><div class="v t-expense">${won(used)}</div><div class="s">${list.length}건</div></div>
       <div class="kpi"><div class="l">남은 돈</div><div class="v" style="${sharedIn-used<0?'color:var(--danger)':''}">${won(sharedIn-used)}</div><div class="s">${sharedIn?Math.round(used/sharedIn*100)+'% 사용':''}</div></div>
     </div>
-    <div class="panel"><h2>정산 대기 <small>개인(정산) 카테고리 내역 · 공동생활비 카드로 결제한 개인 몫 — 각자 카드출금통장에 넣을 돈</small></h2>
+    <div class="panel"><h2>정산 대기 <small>개인(정산) 카테고리 · 공동생활비 카드로 결제한 개인 몫 — 각자 용돈에서 생활비카드 출금통장으로 보낼 돈 (생활비·총지출엔 안 들어가요)</small></h2>
       ${pending.length ? `<div class="row" style="margin-bottom:10px">${Object.entries(pendBy).map(([m,v]) => `<span class="tag ${m}">${esc(memberName(m))} ${won(v)}원</span>`).join('')}</div>
       <div class="mlist">${pending.map(e => `<div class="mcard m-${e.member}" style="cursor:default">
         <div class="mrow"><span class="mt">${esc(e.detail)}</span><span class="mamt">${won(e.amount)}</span></div>
@@ -633,7 +641,8 @@ function viewShared(){
   document.querySelectorAll('[data-xc]').forEach(s => s.onchange = () => { const e = byId(s.dataset.xc);
     const who = groupOf('expense', s.value) === PERSONAL_GROUP && personOfCat(s.value);
     ops([{op:'upsert', col:'entries', item:{...e, category:s.value, member: who || e.member, settled:false}}], who ? '정산 대기로 옮겼어요' : '카테고리를 바꿨어요'); });
-  document.querySelectorAll('[data-xm]').forEach(s => s.onchange = () => ops([{op:'upsert', col:'entries', item:{...byId(s.dataset.xm), member:s.value}}], '사람을 바꿨어요'));
+  document.querySelectorAll('[data-xm]').forEach(s => s.onchange = () => { const e = {...byId(s.dataset.xm), member:s.value, settled:false};
+    ops([{op:'upsert', col:'entries', item:e}], personalShare(e) ? `${memberName(s.value)} 개인 몫으로 옮겼어요 — 정산 대기에 들어가요` : '사람을 바꿨어요'); });
   document.querySelectorAll('[data-xe]').forEach(b => b.onclick = () => { S.returnTo = 'shared'; S.view = 'list'; S.edit = {...byId(b.dataset.xe)}; render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-xd]').forEach(b => b.onclick = () => { const e = byId(b.dataset.xd);
     if (confirm(`${e.date} ${e.detail} ${won(e.amount)}원을 삭제할까요?`)) ops([{op:'delete', col:'entries', item:{id:e.id}}], '삭제했어요'); });
