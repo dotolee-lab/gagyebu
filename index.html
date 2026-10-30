@@ -1125,7 +1125,8 @@ function viewSalary(){
     const rec = sal.find(x => x.who === wid && +x.year === 2026);
     if (rec && !rec.detail) { const d = JSON.parse(JSON.stringify(SAL_SEED_W2026)); d.items.forEach(it => { it.id = uid(); it.m = it.m.map(v => v || ''); }); rec.detail = d; }
     set().salaryRestoreW2026 = true; saveSettings(rec && rec.detail ? `${memberName(wid)} 2026년 급여표를 되살렸어요` : undefined); return; }
-  const netYear = x => x && x.detail && x.detail.basis !== 'gross' ? detTotal(x.detail) : 0;   // 급여표(세후) 연간 합계
+  const tableNet = x => x && x.detail && x.detail.basis !== 'gross' ? detTotal(x.detail) : 0;   // 급여표(세후) 연간 합계
+  const netYear = x => x ? (+x.netYear || tableNet(x)) : 0;   // 직접 적은 연 실수령이 있으면 그걸, 없으면 급여표 합계
   const e = S.edit && S.edit._sal ? S.edit : null;
   const se = S.salEdit;   // 월별 급여표 편집 중 {who, year, d}
   S.salY = S.salY || {};
@@ -1142,6 +1143,7 @@ function viewSalary(){
       <label class="f">누구<select name="who">${set().members.map(m => `<option value="${m.id}" ${e.who===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
       <label class="f">연도<input name="year" type="number" min="2000" max="2100" required value="${esc(e.year)}"></label>
       <label class="f">연봉 (세전)<input name="gross" inputmode="numeric" value="${+e.gross ? won(e.gross) : ''}"></label>
+      <label class="f">연 실수령 (세후)<input name="netYear" inputmode="numeric" value="${+e.netYear ? won(e.netYear) : ''}" placeholder="${tableNet(e) ? '비우면 급여표 합계 ' + won(tableNet(e)) : '1년 동안 받은 세후 금액'}"></label>
       <label class="f">월 실수령액<input name="net" inputmode="numeric" value="${+e.net ? won(e.net) : ''}" placeholder="급여명세서 차인지급액"></label>
       <label class="f">성과급·상여 (연간)<input name="bonus" inputmode="numeric" value="${+e.bonus ? won(e.bonus) : ''}"></label>
       <label class="f">연말정산<input name="tax" inputmode="numeric" value="${e.tax ? won(Math.abs(e.tax)) : ''}" placeholder="환급·추가납부 금액"></label>
@@ -1220,7 +1222,7 @@ function viewSalary(){
     $('#scancel').onclick = () => { S.edit = null; render(); };
     if ($('#sdel')) $('#sdel').onclick = () => { if (confirm(`${memberName(e.who)} ${e.year}년 연봉 기록을 지울까요?`)) { set().salary = sal.filter(x => x.id !== e.id); S.edit = null; saveSettings('지웠어요'); } };
     f.onsubmit = ev => { ev.preventDefault();
-      const rec = {id:e.id || uid(), who:f.who.value, year:+f.year.value, gross:num(f.gross.value), net:num(f.net.value), bonus:num(f.bonus.value), tax:num(f.tax.value) * +f.taxSign.value, memo:f.memo.value.trim()};
+      const rec = {id:e.id || uid(), who:f.who.value, year:+f.year.value, gross:num(f.gross.value), netYear:num(f.netYear.value), net:num(f.net.value), bonus:num(f.bonus.value), tax:num(f.tax.value) * +f.taxSign.value, memo:f.memo.value.trim()};
       const dup = sal.find(x => x.who === rec.who && +x.year === rec.year && x.id !== rec.id);
       if (dup && !confirm(`${memberName(rec.who)} ${rec.year}년 기록이 이미 있어요. 덮어쓸까요?`)) return;
       // 월별 급여표는 연봉 정보 수정과 상관없이 그대로 지켜요
