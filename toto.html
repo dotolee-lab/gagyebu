@@ -139,7 +139,7 @@ async function save(list, del, msg){
     for (const b of list) { const i = S.data.bets.findIndex(x => x.id === b.id); if (i >= 0) S.data.bets[i] = b; else S.data.bets.push(b); }
     S.data.bets = S.data.bets.filter(b => !(del || []).includes(b.id));
     render(); if (msg) toast(msg);
-  } catch(e){ toast('저장 실패: ' + (/row-level/.test(e.message) ? '이 이메일은 도토리 방앗간 권한이 없어요' : e.message)); }
+  } catch(e){ toast('저장 실패: ' + (/row-level/.test(e.message) ? '도토리 방앗간 권한이 없어요' : e.message)); }
 }
 async function saveSettings(msg){
   try { check(await sb.from('toto_settings').upsert({id:1, data:S.data.settings, updated_at:new Date().toISOString()})); render(); toast(msg || '저장했어요'); }
@@ -166,20 +166,22 @@ function header(){
     <span class="sync"><a href="#" id="logout" style="color:inherit">로그아웃</a></span></div>
     <nav>${[['list','기록'],['games','경기'],['news','뉴스'],['stats','통계'],['set','설정']].map(([k,l]) => `<button data-v="${k}" class="${S.view===k?'on':''}">${l}</button>`).join('')}</nav></header>`;
 }
+// 도토리 방앗간은 이 계정 하나로만 들어와요 — 비밀번호만 입력 (가계부 로그인 비밀번호와 같아요)
+const TOTO_EMAIL = 'tksid1@gmail.com';
 function renderLogin(msg){
   $('#app').innerHTML = `<header><div class="top" style="padding-bottom:12px"><h1>도토리 방앗간</h1>
     <span class="switch"><a href="index.html">가계부</a><a class="on">도토리 방앗간</a></span></div></header>
     <div class="panel login"><h2>도토리 방앗간 로그인</h2>
     <p class="muted" style="margin-top:-6px">도토리 방앗간은 들어올 때마다 로그인이 필요해요.</p>
-    <form id="lf" class="grid"><label class="f">이메일<input type="email" id="em" autocomplete="username" autofocus></label>
-    <label class="f">비밀번호<input type="password" id="pw" autocomplete="current-password"></label>
+    <form id="lf" class="grid"><input type="email" id="em" autocomplete="username" value="${TOTO_EMAIL}" hidden>
+    <label class="f">비밀번호<input type="password" id="pw" autocomplete="current-password" autofocus></label>
     <button class="btn pri">들어가기</button><div class="muted" id="lerr">${esc(msg||'')}</div></form></div>`;
   $('#lf').onsubmit = async ev => { ev.preventDefault();
     const r = await sb.auth.signInWithPassword({email: $('#em').value.trim(), password: $('#pw').value});
-    if (r.error) return $('#lerr').textContent = '이메일 또는 비밀번호가 맞지 않아요';
+    if (r.error) { $('#pw').value = ''; $('#pw').focus(); return $('#lerr').textContent = '비밀번호가 맞지 않아요'; }
     // 토토 권한 확인 (허용 목록에 없으면 설정 조회가 거부되진 않지만 쓰기가 막히므로 미리 확인)
     const ok = await sb.rpc('is_toto');
-    if (ok.error || !ok.data) { await sb.auth.signOut(); return $('#lerr').textContent = '이 이메일은 도토리 방앗간 권한이 없어요'; }
+    if (ok.error || !ok.data) { await sb.auth.signOut(); return $('#lerr').textContent = '도토리 방앗간 권한이 없어요'; }
     try { await load(); } catch(e){ $('#lerr').textContent = e.message; } };
 }
 function render(){
