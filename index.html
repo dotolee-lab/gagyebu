@@ -714,7 +714,8 @@ function cardPerks(pm, usage, prevUsage){
   const prevPerf = perfOf(prevUsage), nowPerf = perfOf(usage), min = +pk.minPerf || 0;
   const ok = !min || prevPerf >= min;
   const used = new Set(); const lines = [];
-  rules.forEach(r => { const m = usage.filter(e => !used.has(e) && ((r.kw && kwHit(e.detail, r.kw)) || (r.cat && e.category === r.cat)));
+  rules.forEach(r => { let m = usage.filter(e => !used.has(e) && ((r.kw && kwHit(e.detail, r.kw)) || (r.cat && e.category === r.cat)) && (+e.amount||0) >= (+r.minEach||0));
+    if (+r.maxTimes) m = m.slice(0, +r.maxTimes);   // 월 최대 횟수 (먼저 결제한 것부터)
     m.forEach(e => used.add(e)); const base = m.reduce((s,e) => s + Math.max(0, (+e.amount||0) - (+e.voucher||0)), 0);
     let d = ok ? Math.round(base * (+r.rate || 0) / 100) : 0; if (+r.cap) d = Math.min(d, +r.cap);
     lines.push({r, base, n:m.length, d, items:m}); });
@@ -751,7 +752,7 @@ function viewCardBill(){
         ${x.vou ? `<div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-radius:8px;font-size:13.5px">🎫 상품권(온누리 등)으로 낸 ${won(x.vou)}원은 카드 대금에서 빠져요 <span class="muted">— 실적에는 들어가요</span></div>` : ''}
         ${pk.has || pk.min ? `<div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-radius:8px;font-size:13.5px">
           ${pk.min ? `<div>전월 실적 <b>${won(pk.prevPerf)}</b> / ${won(pk.min)}원 ${pk.ok ? '<span class="tag ok">조건 충족 — 할인 적용</span>' : `<span class="tag warn">${won(pk.min - pk.prevPerf)}원 부족 — 이번 대금은 할인 없음</span>`}</div>` : ''}
-          ${pk.lines.map(l => `<div>🎁 ${esc(l.r.kw || l.r.cat)} ${l.r.rate}%${+l.r.cap ? ` (월 ${won(l.r.cap)}원까지)` : ''}: 대상 ${won(l.base)}원 ${l.n}건 → <b style="color:var(--inc)">−${won(l.d)}원</b>${pk.ok && +l.r.cap && l.d >= +l.r.cap ? ' <span class="muted">한도 다 씀</span>' : ''}</div>`).join('')}
+          ${pk.lines.map(l => `<div>🎁 ${esc(l.r.kw || l.r.cat)} ${l.r.rate}%${[+l.r.minEach ? `회당 ${won(l.r.minEach)}원 이상` : '', +l.r.maxTimes ? `월 ${l.r.maxTimes}회` : '', +l.r.cap ? `월 ${won(l.r.cap)}원까지` : ''].filter(Boolean).length ? ` (${[+l.r.minEach ? `회당 ${won(l.r.minEach)}원 이상` : '', +l.r.maxTimes ? `월 ${l.r.maxTimes}회` : '', +l.r.cap ? `월 ${won(l.r.cap)}원까지` : ''].filter(Boolean).join(' · ')})` : ''}: 대상 ${won(l.base)}원 ${l.n}건 → <b style="color:var(--inc)">−${won(l.d)}원</b>${pk.ok && +l.r.cap && l.d >= +l.r.cap ? ' <span class="muted">한도 다 씀</span>' : ''}</div>`).join('')}
           ${pk.min ? `<div class="muted">이번 이용기간 실적 ${won(pk.nowPerf)} / ${won(pk.min)}원 ${pk.nowPerf >= pk.min ? '✓ 다음 달 할인 조건 충족' : `· ${won(pk.min - pk.nowPerf)}원 더 쓰면 다음 달 할인`}</div>` : ''}</div>` : ''}
         ${ed ? `<div style="margin-top:10px;padding:12px;background:var(--bg);border-radius:8px" data-pkbox="${esc(x.pm.name)}">
           <div class="row"><label class="f">전월 실적 조건 (원)<input data-pmin inputmode="numeric" value="${ed.minPerf ? won(ed.minPerf) : ''}" placeholder="없으면 비우기 (예: 300,000)" style="width:170px"></label>
@@ -759,9 +760,11 @@ function viewCardBill(){
           <div class="muted" style="margin:10px 0 4px">할인 혜택 — 가맹점 이름(쉼표로 여러 개)이나 카테고리로 정해요</div>
           ${ed.rules.map((r, i) => `<div class="row" style="margin-bottom:6px"><input data-rkw="${i}" value="${esc(r.kw || '')}" placeholder="가맹점 키워드 (예: 주유, SK에너지, GS칼텍스)" style="flex:1;min-width:180px"><span class="muted">또는</span>
             <select data-rcat="${i}">${catOpts(r.cat)}</select><input data-rrate="${i}" type="number" min="0" max="100" step="0.1" value="${esc(r.rate || '')}" placeholder="%" style="width:70px"><span>%</span>
-            <input data-rcap="${i}" inputmode="numeric" value="${+r.cap ? won(r.cap) : ''}" placeholder="월 한도 (원)" style="width:120px"><button class="btn sm ghost danger" data-rdel="${i}">×</button></div>`).join('')}
+            <input data-rcap="${i}" inputmode="numeric" value="${+r.cap ? won(r.cap) : ''}" placeholder="월 한도 (원)" style="width:120px">
+            <input data-rmin="${i}" inputmode="numeric" value="${+r.minEach ? won(r.minEach) : ''}" placeholder="회당 최소 (원)" style="width:120px">
+            <input data-rtimes="${i}" type="number" min="0" value="${+r.maxTimes || ''}" placeholder="월 횟수" style="width:80px"><button class="btn sm ghost danger" data-rdel="${i}">×</button></div>`).join('')}
           <div class="row" style="margin-top:8px;justify-content:space-between"><button class="btn sm" data-radd>+ 혜택 추가</button><span class="row"><button class="btn sm ghost" data-pkx>닫기</button><button class="btn sm pri" data-pksave="${esc(x.pm.name)}">저장</button></span></div>
-          <p class="muted" style="margin:8px 0 0">예) 실적 300,000 · 「주유, 에너지, 칼텍스, S-OIL」 10% · 한도 10,000 → 전월에 30만 원 넘게 썼으면 이번 대금에서 주유비 10%(최대 1만 원)를 빼고 보여줘요. 가계부 지출은 결제한 금액 그대로 남아요.</p></div>` : ''}
+          <p class="muted" style="margin:8px 0 0">회당 최소: 한 번 결제가 이 금액 이상일 때만 할인 (예: 20,000) · 월 횟수: 한 달에 몇 번까지 할인 (비우면 제한 없음).<br>예) 실적 300,000 · 「주유, 에너지, 칼텍스, S-OIL」 10% · 한도 10,000 → 전월에 30만 원 넘게 썼으면 이번 대금에서 주유비 10%(최대 1만 원)를 빼고 보여줘요. 가계부 지출은 결제한 금액 그대로 남아요.</p></div>` : ''}
         ${setOpen ? `<div class="row" style="margin-top:10px;padding:10px;background:var(--bg);border-radius:8px">
           <label class="f">이용기간 시작일<select data-bstart><option value="1" ${(+b.start||1)===1?'selected':''}>1일 ~ 말일</option>${Array.from({length:27}, (_, i) => i + 2).map(d => `<option value="${d}" ${+b.start===d?'selected':''}>전월 ${d}일 ~ ${d-1}일</option>`).join('')}</select></label>
           <label class="f">결제일<input data-bday type="number" min="1" max="31" value="${esc(b.day||'')}" placeholder="예: 14" style="width:80px"></label>
@@ -782,7 +785,7 @@ function viewCardBill(){
   const box = document.querySelector('[data-pkbox]');
   if (box) { const ed = S.perkEdit, num = v => +String(v||'').replace(/[^\d]/g,'') || 0;
     const read = () => { ed.minPerf = num(box.querySelector('[data-pmin]').value); ed.exclude = box.querySelector('[data-pexc]').value.trim();
-      ed.rules.forEach((r, i) => { r.kw = box.querySelector(`[data-rkw="${i}"]`).value.trim(); r.cat = box.querySelector(`[data-rcat="${i}"]`).value; r.rate = +box.querySelector(`[data-rrate="${i}"]`).value || 0; r.cap = num(box.querySelector(`[data-rcap="${i}"]`).value); }); };
+      ed.rules.forEach((r, i) => { r.kw = box.querySelector(`[data-rkw="${i}"]`).value.trim(); r.cat = box.querySelector(`[data-rcat="${i}"]`).value; r.rate = +box.querySelector(`[data-rrate="${i}"]`).value || 0; r.cap = num(box.querySelector(`[data-rcap="${i}"]`).value); r.minEach = num(box.querySelector(`[data-rmin="${i}"]`).value); r.maxTimes = +box.querySelector(`[data-rtimes="${i}"]`).value || 0; }); };
     box.querySelectorAll('[inputmode=numeric]').forEach(i => i.oninput = () => { const n = num(i.value); i.value = n ? n.toLocaleString('ko-KR') : ''; });
     box.querySelector('[data-radd]').onclick = () => { read(); ed.rules.push({kw: ed.rules.length ? '' : '주유, 에너지, 칼텍스, S-OIL, 오일뱅크', cat:'', rate:10, cap:0}); render(); };
     box.querySelectorAll('[data-rdel]').forEach(b => b.onclick = () => { read(); ed.rules.splice(+b.dataset.rdel, 1); render(); });
