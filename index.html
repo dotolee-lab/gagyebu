@@ -371,7 +371,7 @@ function render(){
   if (!S.month) S.month = cycleOf({type:'expense', date: today()});
   if (!S.year) S.year = +S.month.slice(0,4);
   document.title = set().title || '가계부';
-  const tabs = [['dash','이번 달'],['list','내역'],['shared','공동생활비'],['rec','고정지출'],['loan','대출'],['salary','연봉'],['year','연간 결산'],['set','설정']];
+  const tabs = [['dash','이번 달'],['list','내역'],['card','카드별'],['shared','공동생활비'],['rec','고정지출'],['loan','대출'],['salary','연봉'],['year','연간 결산'],['set','설정']];
   const unsettled = S.data.entries.filter(e => needsSettle(e) || needsReimb(e)).length;
   $('#app').innerHTML = `<header><div class="top"><h1>${esc(set().title)}</h1><span class="switch"><a class="on">가계부</a><a href="travel.html">여행</a><a href="health.html">건강</a><a href="car.html">다람이${S.carDot?'<i class="dot"></i>':''}</a><a href="kitchen.html">큩토리 부엌</a>${S.toto ? `<a href="toto.html" title="따로 로그인">도토리 방앗간</a>` : ''}<a class="more" onclick="this.parentNode.classList.toggle('open')">▾${S.carDot?'<i class="dot"></i>':''}</a></span>
       <span class="sync">${S.syncedAt ? '동기화 ' + S.syncedAt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : ''}
@@ -381,7 +381,7 @@ function render(){
   document.body.classList.toggle('wide', S.view === 'year' || S.view === 'salary');
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.view = b.dataset.v; S.edit = null; S.catEdit = null; if (S.pending) pull(true); else render(); });
   $('#logout').onclick = async ev => { ev.preventDefault(); await sb.auth.signOut(); S.data=null; renderLogin(); };
-  ({dash:viewDash, list:viewList, shared:viewShared, rec:viewRec, loan:viewLoan, salary:viewSalary, year:viewYear, set:viewSet})[S.view]();
+  ({dash:viewDash, catv:viewCatv, card:viewCard, list:viewList, shared:viewShared, rec:viewRec, loan:viewLoan, salary:viewSalary, year:viewYear, set:viewSet})[S.view]();
 }
 
 function monthPicker(){
@@ -422,7 +422,7 @@ function viewDash(){
       <div class="panel"><h2>카테고리별 지출 <small>공동생활비 사용분 포함 · 예산은 설정에서</small></h2>
         ${catRows.length ? catRows.map(r => {
           const pct = r.budget ? Math.min(100, r.spent / r.budget * 100) : 0;
-          return `<div class="budget-row"><span>${esc(r.name)} <span class="muted">${esc(r.group)}</span></span>
+          return `<div class="budget-row" data-catv="${esc(r.name)}" style="cursor:pointer" title="눌러서 기간별 합계 보기"><span><u style="text-decoration-color:var(--line);text-underline-offset:3px">${esc(r.name)}</u> <span class="muted">${esc(r.group)}</span></span>
             <div class="bar ${r.budget && r.spent>r.budget?'over':''}">${r.budget?`<i style="width:${pct}%"></i>`:''}</div>
             <span class="num">${won(r.spent)}${r.budget?` / ${won(r.budget)}`:''}</span></div>`; }).join('')
           : '<div class="empty">이번 달 지출이 아직 없어요</div>'}
@@ -440,6 +440,7 @@ function viewDash(){
     </div>`;
   bindMonth();
   $('#quick').onclick = () => { S.view='list'; S.edit='new'; render(); };
+  document.querySelectorAll('[data-catv]').forEach(d => d.onclick = () => { S.view = 'catv'; S.catv = d.dataset.catv; S.catvSel = null; render(); window.scrollTo(0,0); });
   if ($('#genrec')) $('#genrec').onclick = () => genRecurring(S.month, pendingRec);
 }
 
@@ -609,6 +610,74 @@ function viewList(){
   document.querySelectorAll('[data-e]').forEach(b => b.onclick = () => { S.edit = {...realEntry(b.dataset.e)}; render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const e = realEntry(b.dataset.d);
     if (confirm(`${e.date} ${e.detail||e.category} ${won(e.amount)}원을 삭제할까요?${+e.installments > 1 ? ` (${e.installments}개월 할부 전체가 지워져요)` : ''}`)) ops([{op:'delete', col:'entries', item:{id:e.id}}], '삭제했어요'); });
+}
+
+// ===== 카테고리 기간별 합계 (이번 달 → 카테고리 누르면) =====
+function viewCatv(){
+  const name = S.catv, mode = S.catvMode || 'month';
+  const inCat = e => e.type === 'expense' && catKey(e) === name;
+  const all = S.data.entries.flatMap(expandInst).filter(inCat);
+  let periods;
+  if (mode === 'month') periods = Array.from({length:12}, (_, i) => shiftMonth(S.month, i - 11)).map(m => ({key:m, label:`${m.slice(2,4)}.${+m.slice(5)}월`, list: all.filter(e => cycleOf(e) === m)}));
+  else { const ys = [...new Set(all.map(e => cycleOf(e).slice(0,4)))].sort(); if (!ys.length) ys.push(S.month.slice(0,4));
+    periods = ys.map(y => ({key:y, label:y + '년', list: all.filter(e => cycleOf(e).startsWith(y))})); }
+  periods.forEach(p => { p.sum = p.list.reduce((a,e) => a + (+e.amount||0), 0); });
+  const tot = periods.reduce((a,p) => a + p.sum, 0), used = periods.filter(p => p.sum), avg = used.length ? tot / used.length : 0, max = Math.max(1, ...periods.map(p => p.sum));
+  const sel = periods.find(p => p.key === S.catvSel) || null;
+  const W = 760, H = 200, P = {l:8, r:8, t:24, b:26}, bw = (W - P.l - P.r) / periods.length;
+  const g = groupOf('expense', name);
+  $('#main').innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:12px"><button class="btn ghost" id="cv-back">← 이번 달</button>
+      <div class="seg"><button data-cm="month" class="${mode==='month'?'on':''}">월별 (최근 12개월)</button><button data-cm="year" class="${mode==='year'?'on':''}">연도별</button></div></div>
+    <div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">${esc(name)} <small>${esc(g || '')}</small></h2>
+      <select id="cv-cat">${cats('expense').map(c => `<option ${c.name===name?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="grid kpis" style="margin:14px 0">
+        <div class="kpi"><div class="l">${mode==='month' ? '12개월 합계' : '전체 합계'}</div><div class="v t-expense">${won(tot)}</div><div class="s">${periods[0].label} ~ ${periods[periods.length-1].label}</div></div>
+        <div class="kpi"><div class="l">${mode==='month' ? '월 평균' : '연 평균'}</div><div class="v">${won(avg)}</div><div class="s">쓴 ${mode==='month'?'달':'해'} ${used.length}번 기준</div></div>
+        <div class="kpi"><div class="l">가장 많이 쓴 ${mode==='month'?'달':'해'}</div><div class="v">${used.length ? won(max) : '-'}</div><div class="s">${used.length ? periods.find(p => p.sum === max).label : ''}</div></div></div>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${periods.map((p, i) => { const h = (H - P.t - P.b) * p.sum / max, x = P.l + i * bw;
+        return `<g data-cp="${p.key}" style="cursor:pointer"><rect x="${x}" y="${P.t}" width="${bw}" height="${H-P.t-P.b}" fill="transparent"/>
+          <rect x="${x + bw*.2}" y="${H - P.b - h}" width="${bw*.6}" height="${Math.max(h, p.sum ? 2 : 0)}" rx="3" fill="${p.key === S.catvSel ? 'var(--ink)' : 'var(--accent)'}" opacity="${p.key === S.month || p.key === S.catvSel ? 1 : .7}"/>
+          <text x="${x + bw/2}" y="${H-8}" text-anchor="middle">${p.label}</text>${p.sum ? `<text x="${x + bw/2}" y="${H - P.b - h - 6}" text-anchor="middle" style="font-size:10px">${p.sum >= 10000 ? Math.round(p.sum/1000)/10 + '만' : won(p.sum)}</text>` : ''}</g>`; }).join('')}</svg>
+      <div class="tbl" style="max-height:none;border:0;margin-top:8px"><table style="min-width:0"><tr><th>기간</th><th class="num">합계</th><th class="num">건수</th><th class="num">지난번보다</th><th></th></tr>
+        ${periods.slice().reverse().map((p, i, arr) => { const prev = arr[i+1]; const d = prev ? p.sum - prev.sum : null;
+          return `<tr data-cp="${p.key}" style="cursor:pointer;${p.key === S.catvSel ? 'background:var(--accent-soft)' : ''}"><td class="nw"><b>${p.label}</b></td><td class="num">${won(p.sum)}</td><td class="num">${p.list.length}</td>
+            <td class="num">${d ? `<span style="color:${d > 0 ? 'var(--exp)' : 'var(--inc)'}">${d > 0 ? '▲' : '▼'} ${won(Math.abs(d))}</span>` : ''}</td><td class="muted">${p.list.length ? '내역 보기 ›' : ''}</td></tr>`; }).join('')}</table></div></div>
+    ${sel ? `<div class="panel"><h2>${sel.label} ${esc(name)} 내역 <small>${sel.list.length}건 · ${won(sel.sum)}원</small></h2>
+      ${sel.list.length ? `<div class="tbl" style="max-height:none;border:0"><table style="min-width:0"><tr><th>날짜</th><th>상세</th><th>사람</th><th>결제</th><th class="num">금액</th><th>메모</th></tr>
+        ${sel.list.slice().sort((a,b) => a.date.localeCompare(b.date)).map(e => `<tr><td class="nw">${e.date.slice(2).replace(/-/g,'.')}${e._inst ? ` <span class="tag">할부 ${e._inst[0]}/${e._inst[1]}</span>` : ''}</td><td>${esc(e.detail)}</td>
+          <td><span class="tag ${e.member}">${esc(memberName(e.member))}</span></td><td class="muted nw">${esc(e.payMethod)}</td><td class="num">${won(e.amount)}</td><td class="muted">${esc(e.memo)}</td></tr>`).join('')}</table></div>` : '<div class="muted">내역이 없어요</div>'}</div>` : ''}`;
+  $('#cv-back').onclick = () => { S.view = 'dash'; render(); };
+  $('#cv-cat').onchange = () => { S.catv = $('#cv-cat').value; S.catvSel = null; render(); };
+  document.querySelectorAll('[data-cm]').forEach(b => b.onclick = () => { S.catvMode = b.dataset.cm; S.catvSel = null; render(); });
+  document.querySelectorAll('[data-cp]').forEach(el => el.onclick = () => { S.catvSel = S.catvSel === el.dataset.cp ? null : el.dataset.cp; render(); });
+}
+
+// ===== 카드별 =====
+function viewCard(){
+  const list = entriesOf(S.month).filter(e => e.type === 'expense');
+  const pmOrder = set().payMethods.map(p => p.name);
+  const by = {}; list.forEach(e => { const k = e.payMethod || ''; (by[k] = by[k] || []).push(e); });
+  const keys = Object.keys(by).sort((a,b) => (a === '') - (b === '') || (pmOrder.indexOf(a) + 1 || 99) - (pmOrder.indexOf(b) + 1 || 99));
+  const sumOf = l => l.reduce((a,e) => a + (+e.amount||0), 0);
+  const sel = S.cardSel && by[S.cardSel === '__none' ? '' : S.cardSel] ? S.cardSel : 'all';
+  const shown = sel === 'all' ? keys : [sel === '__none' ? '' : sel];
+  const label = k => k || '결제수단 없음';
+  $('#main').innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}<span class="muted">이번 달 지출을 결제한 카드·계좌별로 모았어요 (할부는 달마다 나눠서)</span></div>
+    <div class="chips" style="margin-bottom:14px"><button class="chip" data-cs="all" style="cursor:pointer;padding:5px 12px;${sel==='all'?'background:var(--ink);color:var(--bg);border-color:var(--ink)':''}">전체 <b class="num">${won(sumOf(list))}</b></button>
+      ${keys.map(k => { const id = k || '__none'; return `<button class="chip" data-cs="${esc(id)}" style="cursor:pointer;padding:5px 12px;${sel===id?'background:var(--ink);color:var(--bg);border-color:var(--ink)':''}">${esc(label(k))}${isSharedPM(k) ? ' <span class="tag">공동</span>' : ''} <b class="num">${won(sumOf(by[k]))}</b> <span style="opacity:.6">${by[k].length}건</span></button>`; }).join('')}</div>
+    ${keys.length ? shown.map(k => { const l = by[k].slice().sort((a,b) => b.date.localeCompare(a.date));
+      const byCat = {}; l.forEach(e => byCat[catKey(e)] = (byCat[catKey(e)]||0) + +e.amount);
+      return `<div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">💳 ${esc(label(k))}${isSharedPM(k) ? ' <span class="tag">공동생활비 카드</span>' : ''}</h2><b class="num" style="font-size:18px">${won(sumOf(l))}원 <span class="muted" style="font-weight:400">${l.length}건</span></b></div>
+        <div class="chips" style="margin:10px 0">${Object.entries(byCat).sort((a,b) => b[1]-a[1]).map(([c,v]) => `<span class="chip" style="padding-right:10px">${esc(c)} <b class="num">${won(v)}</b></span>`).join('')}</div>
+        ${mobileCards(l)}
+        <div class="tbl pc-only" style="max-height:none;border:0"><table><tr><th>날짜</th><th>카테고리</th><th>상세</th><th>사람</th><th class="num">금액</th><th>메모</th></tr>
+        ${l.map(e => `<tr class="m-${e.member}"><td class="nw">${e.date.slice(5).replace('-','.')}${e._inst ? ` <span class="tag">할부 ${e._inst[0]}/${e._inst[1]}</span>` : ''}</td><td>${esc(e.category)}</td><td>${esc(e.detail)}</td>
+          <td class="mem">${esc(memberName(e.member))}${needsSettle(e) ? ' <span class="tag warn">정산 전</span>' : ''}${needsReimb(e) ? ` <span class="tag h">${esc(memberName(reimbWho(e)))} 받을 돈</span>` : ''}</td>
+          <td class="num">${won(e.amount)}</td><td class="muted">${esc(e.memo)}</td></tr>`).join('')}</table></div></div>`; }).join('')
+      : '<div class="panel empty">이번 달 지출이 아직 없어요</div>'}`;
+  bindMonth();
+  bindCardOpen('card');
+  document.querySelectorAll('[data-cs]').forEach(b => b.onclick = () => { S.cardSel = b.dataset.cs; render(); });
 }
 
 // ===== 공동생활비 =====
