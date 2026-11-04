@@ -468,7 +468,7 @@ function entryForm(e){
       <label class="f">귀속월 (비우면 자동)<input type="month" name="month" value="${esc(e.month||'')}"></label>
       ${type === 'expense' ? `<label class="f" style="grid-column:1/-1;flex-direction:row;align-items:center;gap:8px;flex-wrap:wrap;color:var(--ink)"><input type="checkbox" name="reimb" ${isReimb(e)?'checked':''} style="width:18px;height:18px">
         개인 카드·돈으로 낸 집안 지출 — 생활비통장에서 돌려받기 <select name="reimbWho" style="font-size:14px">${set().members.map(m => `<option value="${m.id}" ${reimbWho(e)===m.id?'selected':''}>${esc(m.name)}에게</option>`).join('')}</select></label>` : ''}
-      ${type === 'expense' ? `<label class="f">상품권으로 낸 금액 (온누리 등)<input name="voucher" inputmode="numeric" value="${+e.voucher ? won(e.voucher) : ''}" placeholder="카드 대금에서 빠져요"></label>` : ''}
+      ${type === 'expense' ? `<label class="f">온누리·상품권으로 낸 금액 (원)<span class="row" style="gap:4px;flex-wrap:nowrap"><input name="voucher" inputmode="numeric" value="${+e.voucher ? won(e.voucher) : ''}" placeholder="숫자만 (예: 12,100)" style="flex:1;font-size:15px;color:var(--ink)"><button type="button" class="btn sm" id="vou-all" title="결제 금액 전부를 상품권으로">전액</button></span></label>` : ''}
       ${type === 'expense' ? `<label class="f">할부<select name="inst">${[1,2,3,4,5,6,7,8,9,10,11,12,18,24,36].map(n => `<option value="${n}" ${(+e.installments||1)===n?'selected':''}>${n===1?'일시불':n+'개월'}</option>`).join('')}</select></label>` : ''}
     </div>
     <datalist id="detail-list">${[...new Set(S.data.entries.filter(x=>x.type===type).map(x=>x.detail).filter(Boolean))].slice(-200).map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
@@ -486,7 +486,8 @@ function bindEntryForm(e){
   $('#d-prev').onclick = () => moveMonth(-1); $('#d-next').onclick = () => moveMonth(1);
   f.category.onchange = () => { const who = groupOf(e.type, f.category.value) === PERSONAL_GROUP && personOfCat(f.category.value); if (who) f.member.value = who; };
   f.amount.oninput = () => { const n = f.amount.value.replace(/[^\d]/g,''); f.amount.value = n ? (+n).toLocaleString('ko-KR') : ''; };
-  if (f.voucher) f.voucher.oninput = () => { const n = f.voucher.value.replace(/[^\d]/g,''); f.voucher.value = n ? (+n).toLocaleString('ko-KR') : ''; };
+  if (f.voucher) { f.voucher.oninput = () => { const n = f.voucher.value.replace(/[^\d]/g,''); f.voucher.value = n ? (+n).toLocaleString('ko-KR') : ''; };
+    $('#vou-all').onclick = () => { f.voucher.value = f.amount.value; if (!/온누리|상품권/.test(f.memo.value)) f.memo.value = (f.memo.value ? f.memo.value + ' · ' : '') + '온누리'; }; }
   if (f.reimb) { const auto = () => { const rr = reimbRule({payMethod:f.payMethod.value, category:f.category.value}); if (rr && !e.id) { f.reimb.checked = true; f.reimbWho.value = rr.who; } };
     f.payMethod.addEventListener('change', auto); f.category.addEventListener('change', auto); }
   // 상세를 고르면 예전에 쓴 카테고리·결제수단 자동 채움
