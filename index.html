@@ -685,7 +685,56 @@ function viewCatv(){
 }
 
 // ===== 카드별 =====
+const cardModeSeg = () => `<div class="seg"><button data-cmode="use" class="${S.cardMode !== 'bill' ? 'on' : ''}">월별 사용 (가계부 기준)</button><button data-cmode="bill" class="${S.cardMode === 'bill' ? 'on' : ''}">💳 카드 대금 (결제일 기준)</button></div>`;
+function bindCardMode(){ document.querySelectorAll('[data-cmode]').forEach(b => b.onclick = () => { S.cardMode = b.dataset.cmode; render(); }); }
+// 카드 대금: 카드마다 이용기간(시작일)·결제일이 달라요. 예) 1일~말일 사용분 → 다음 달 결제 / 전월 25일~이번 달 24일 사용분 → 다음 달 결제
+function billRange(pm, payMonth){
+  const b = pm.bill || {}, start = +b.start || 1, lag = b.lag === 0 ? 0 : 1;
+  const endM = shiftMonth(payMonth, -lag);
+  if (start <= 1) { const [y,m] = endM.split('-').map(Number); return [`${endM}-01`, `${endM}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`]; }
+  return [`${shiftMonth(endM,-1)}-${String(start).padStart(2,'0')}`, `${endM}-${String(start-1).padStart(2,'0')}`];
+}
+function viewCardBill(){
+  const pay = S.billMonth || (S.billMonth = today().slice(0,7));
+  const hidden = new Set((set().cardTab || {}).hidden || []);
+  const cards = set().payMethods.filter(p => !hidden.has(p.name));
+  // 할부는 결제 회차마다 한 달씩 뒤로 (첫 회 = 결제한 날)
+  const virt = S.data.entries.filter(e => e.type === 'expense' && e.payMethod).flatMap(e => { const n = +e.installments || 1;
+    if (n <= 1) return [e]; const part = Math.floor(+e.amount / n);
+    return Array.from({length:n}, (_, k) => ({...e, date:addMonths(e.date, k), amount: k ? part : +e.amount - part * (n - 1), _inst:[k+1, n]})); });
+  const rows = cards.map(pm => { const [a, z] = billRange(pm, pay); const l = virt.filter(e => e.payMethod === pm.name && e.date >= a && e.date <= z).sort((x,y) => x.date.localeCompare(y.date));
+    const d = +((pm.bill||{}).day) || 0; const [py, pmn] = pay.split('-').map(Number);
+    return {pm, a, z, l, sum: l.reduce((s,e) => s + (+e.amount||0), 0), due: d ? `${pay}-${String(Math.min(d, new Date(py, pmn, 0).getDate())).padStart(2,'0')}` : ''}; });
+  const tot = rows.reduce((s,x) => s + x.sum, 0);
+  const md = ds => `${+ds.slice(5,7)}/${+ds.slice(8)}`;
+  $('#main').innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:14px">${cardModeSeg()}</div>
+    <div class="row" style="justify-content:space-between;margin-bottom:14px"><div class="row"><button class="btn sm" id="bp">‹</button><b style="min-width:110px;text-align:center">${+pay.slice(0,4)}년 ${+pay.slice(5)}월 결제분</b><button class="btn sm" id="bn">›</button></div>
+      <b class="num" style="font-size:18px">합계 ${won(tot)}원</b></div>
+    ${rows.map(x => { const b = x.pm.bill || {}, open = S.billOpen === x.pm.name, setOpen = S.billSet === x.pm.name;
+      return `<div class="panel" style="${x.sum ? '' : 'opacity:.75'}"><div class="row" style="justify-content:space-between">
+        <div><b style="font-size:16px">💳 ${esc(x.pm.name)}</b>${x.pm.shared ? ' <span class="tag">공동</span>' : ''}
+          <div class="muted">이용기간 ${md(x.a)} ~ ${md(x.z)}${x.due ? ` · <b>${md(x.due)} 결제</b>` : ' · 결제일 미설정'}${b.start ? '' : ' <span class="tag warn">주기 확인</span>'}</div></div>
+        <span class="row"><b class="num" style="font-size:18px">${won(x.sum)}원</b><span class="muted">${x.l.length}건</span>
+          ${x.l.length ? `<button class="btn sm" data-bo="${esc(x.pm.name)}">${open ? '접기' : '내역'}</button>` : ''}<button class="btn sm ghost" data-bs="${esc(x.pm.name)}">⚙️ 주기</button></span></div>
+        ${setOpen ? `<div class="row" style="margin-top:10px;padding:10px;background:var(--bg);border-radius:8px">
+          <label class="f">이용기간 시작일<select data-bstart><option value="1" ${(+b.start||1)===1?'selected':''}>1일 ~ 말일</option>${Array.from({length:27}, (_, i) => i + 2).map(d => `<option value="${d}" ${+b.start===d?'selected':''}>전월 ${d}일 ~ ${d-1}일</option>`).join('')}</select></label>
+          <label class="f">결제일<input data-bday type="number" min="1" max="31" value="${esc(b.day||'')}" placeholder="예: 14" style="width:80px"></label>
+          <label class="f">결제하는 달<select data-blag><option value="1" ${b.lag !== 0 ? 'selected' : ''}>이용기간 끝난 다음 달</option><option value="0" ${b.lag === 0 ? 'selected' : ''}>이용기간 끝난 그달</option></select></label>
+          <button class="btn sm pri" data-bsave="${esc(x.pm.name)}" style="align-self:flex-end">저장</button>
+          <span class="muted" style="flex-basis:100%">카드사 앱·명세서의 "이용기간"과 "결제일"을 보고 맞춰주세요. 예) 결제일 14일 → 전월 1일~말일 사용분이면 「1일 ~ 말일 · 다음 달」</span></div>` : ''}
+        ${open ? `<div class="tbl" style="max-height:none;border:0;margin-top:10px"><table style="min-width:0"><tr><th>날짜</th><th>카테고리</th><th>상세</th><th>사람</th><th class="num">금액</th></tr>
+          ${x.l.map(e => `<tr><td class="nw">${e.date.slice(5).replace('-','.')}${e._inst ? ` <span class="tag">할부 ${e._inst[0]}/${e._inst[1]}</span>` : ''}</td><td>${esc(e.category)}</td><td>${esc(e.detail)}</td><td><span class="tag ${e.member}">${esc(memberName(e.member))}</span></td><td class="num">${won(e.amount)}</td></tr>`).join('')}</table></div>` : ''}</div>`; }).join('')}
+    <p class="muted">카드 대금은 가계부에 입력된 내역으로 계산한 예상 금액이에요. 연회비·이자·해외결제 수수료처럼 가계부에 없는 건 빠져 있어요. 숨긴 카드는 「월별 사용」의 카드 목록 편집에서 다시 켤 수 있어요.</p>`;
+  bindCardMode();
+  $('#bp').onclick = () => { S.billMonth = shiftMonth(pay, -1); render(); }; $('#bn').onclick = () => { S.billMonth = shiftMonth(pay, 1); render(); };
+  document.querySelectorAll('[data-bo]').forEach(b => b.onclick = () => { S.billOpen = S.billOpen === b.dataset.bo ? null : b.dataset.bo; render(); });
+  document.querySelectorAll('[data-bs]').forEach(b => b.onclick = () => { S.billSet = S.billSet === b.dataset.bs ? null : b.dataset.bs; render(); });
+  document.querySelectorAll('[data-bsave]').forEach(b => b.onclick = () => { const box = b.parentNode, pm = set().payMethods.find(p => p.name === b.dataset.bsave);
+    pm.bill = {start:+box.querySelector('[data-bstart]').value, day:+box.querySelector('[data-bday]').value || '', lag:+box.querySelector('[data-blag]').value};
+    S.billSet = null; saveSettings(`${pm.name} 결제 주기를 저장했어요`); });
+}
 function viewCard(){
+  if (S.cardMode === 'bill') return viewCardBill();
   const list = entriesOf(S.month).filter(e => e.type === 'expense');
   const hidden = new Set((set().cardTab || {}).hidden || []);
   const idOf = k => k || '__none';
@@ -701,7 +750,8 @@ function viewCard(){
   const label = k => k || '결제수단 없음';
   const ed = S.cardEdit;
   const allKeys = [...new Set(pmOrder.concat(Object.keys(by)))];
-  $('#main').innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}
+  $('#main').innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:14px">${cardModeSeg()}</div>
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}
       <span class="row"><span class="muted">할부는 달마다 나눠서 보여줘요</span><button class="btn sm" id="ce">${ed ? '편집 닫기' : '✏️ 카드 목록 편집'}</button></span></div>
     ${ed ? `<div class="panel" style="border-color:var(--accent)"><h2>카드 목록 편집 <small>체크를 끄면 카드별 탭에서 숨겨요 (내역은 그대로)</small></h2>
       <div class="chips" style="margin-bottom:12px">${allKeys.map(k => `<label class="chip" style="padding:5px 12px;cursor:pointer"><input type="checkbox" data-ch="${esc(idOf(k))}" ${hidden.has(idOf(k)) ? '' : 'checked'}> ${esc(label(k))}${isSharedPM(k) ? ' <span class="tag">공동</span>' : ''}</label>`).join('')}</div>
@@ -723,7 +773,7 @@ function viewCard(){
           <td class="nw"><button class="btn sm ghost" data-ke="${e.id}">수정</button><button class="btn sm ghost danger" data-kd="${e.id}">삭제</button></td></tr>`).join('')}</table></div>`
         : '<div class="muted" style="margin-top:8px">이번 달 이 카드로 쓴 내역이 없어요</div>'}</div>`; }).join('')
       : '<div class="panel empty">이번 달 지출이 아직 없어요</div>'}`;
-  bindMonth();
+  bindMonth(); bindCardMode();
   bindCardOpen('card');
   document.querySelectorAll('[data-cs]').forEach(b => b.onclick = () => { S.cardSel = b.dataset.cs; render(); });
   $('#ce').onclick = () => { S.cardEdit = !S.cardEdit; render(); };
