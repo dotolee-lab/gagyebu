@@ -1425,9 +1425,8 @@ function viewSet(){
         <label class="btn">백업 복원<input type="file" id="imp-json" accept=".json" hidden></label>
         <label class="btn">내역 파일 추가 (기존 유지)<input type="file" id="imp-merge" accept=".json" hidden></label></div>
       <div id="merge-prev"></div>
-      <p class="muted" style="margin:0 0 6px">카드사 이용내역 가져오기 — 카드사에서 받은 <b>엑셀(xls·xlsx) 또는 CSV</b> 파일을 그대로 올리세요. <b>이용일자·가맹점·이용금액</b> 열을 자동으로 찾아요. (구분·세부내용·내용 열이 있으면 사람·메모·카테고리로 들어가요) <b>롯데카드처럼 여러 카드가 한 파일에 섞여 있으면 「이용카드」 열로 알아서 나누고, 취소된 결제는 빼요.</b> 왼쪽 선택칸은 카드 열이 없는 파일에만 쓰여요.</p>
-      <div class="row"><select id="imp-pm">${st.payMethods.map(p=>`<option>${esc(p.name)}</option>`).join('')}</select>
-        <label class="btn pri">카드 내역 파일 선택<input type="file" id="imp-csv" accept=".xls,.xlsx,.csv,text/csv" hidden></label></div>
+      <p class="muted" style="margin:0 0 6px">카드사 이용내역 가져오기 — 카드사에서 받은 <b>엑셀(xls·xlsx) 또는 CSV</b> 파일을 그대로 올리세요. <b>이용일자·가맹점·이용금액</b> 열을 자동으로 찾아요. (구분·세부내용·내용 열이 있으면 사람·메모·카테고리로 들어가요) <b>파일만 넣으면 돼요</b> — 롯데카드처럼 여러 카드가 섞여 있으면 「이용카드」 열로 알아서 나누고, 취소된 결제는 빼요. 카드 이름이 없는 파일이면 미리보기에서 어느 카드인지 한 번만 골라주세요.</p>
+      <div class="row"><label class="btn pri">카드 내역 파일 선택<input type="file" id="imp-csv" accept=".xls,.xlsx,.csv,text/csv" hidden></label></div>
       <div id="imp-prev"></div></div>`;
   $('#s-save').onclick = () => { st.title = $('#s-title').value.trim() || '가계부';
     st.cycleStartDay = Math.min(28, Math.max(1, +$('#s-day').value || 1));
@@ -1496,7 +1495,7 @@ function viewSet(){
       await restoreAll(d); toast('복원했어요'); } catch(e){ toast('복원 실패: ' + e.message); } };
   $('#imp-merge').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; ev.target.value = '';
     try { mergePreview(JSON.parse(await f.text())); } catch(e){ toast('파일을 읽지 못했어요: ' + e.message); } };
-  $('#imp-csv').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; try { importCardRows(await readRows(f), $('#imp-pm').value); } catch(e){ toast('파일을 읽지 못했어요: ' + e.message); } ev.target.value=''; };
+  $('#imp-csv').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; try { importCardRows(await readRows(f)); } catch(e){ toast('파일을 읽지 못했어요: ' + e.message); } ev.target.value=''; };
 }
 
 // ---------- CSV ----------
@@ -1596,7 +1595,9 @@ function mergePreview(d){
     await ops(items.map(item => ({op:'upsert', col:'entries', item})), `${items.length}건을 추가했어요`);
   };
 }
-function importCardRows(rows, pm){
+function importCardRows(rows){
+  // 카드 이름 열이 없는 파일은 미리보기에서 카드를 골라요 (지난번 고른 카드가 기본값)
+  let pm = set().lastImportPm && set().payMethods.some(p => p.name === set().lastImportPm) ? set().lastImportPm : (set().payMethods.find(p => !p.shared) || set().payMethods[0] || {name:''}).name;
   const hi = findHeader(rows);
   if (hi < 0) return toast('이용일자·이용금액 열을 찾지 못했어요');
   const h = rows[hi].map(norm);
@@ -1639,6 +1640,8 @@ function importCardRows(rows, pm){
   const catOpts = sel => cats('expense').map(c => `<option ${c.name===sel?'selected':''}>${esc(c.name)}</option>`).join('');
   const howTag = {rule:'규칙', learn:'지난 기록', file:'파일', base:'기본값'};
   $('#imp-prev').innerHTML = `<div style="margin-top:12px"><b>${items.length}건</b> 가져오기 (합계 ${won(items.reduce((a,e)=>a+e.amount,0))}원, 중복·빈 행 ${skipped.length}건${canceled ? ` · 취소 ${canceled}건` : ''} 제외)
+    ${!cardKeys.length ? `<div class="panel" style="margin:10px 0;padding:12px;border-color:var(--accent)"><b>💳 이 파일은 어느 카드 내역인가요?</b> <span class="muted">파일에 카드 이름이 없어서 한 번만 골라주세요</span>
+      <div class="row" style="margin-top:8px"><select id="imp-one">${set().payMethods.map(p => `<option ${p.name===pm?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div></div>` : ''}
     ${cardKeys.length ? `<div class="panel" style="margin:10px 0;padding:12px;border-color:var(--accent)"><b>💳 카드 ${cardKeys.length}종류가 섞여 있어요</b> <span class="muted">카드 이름으로 결제수단을 나눴어요. 맞는지 확인하세요 (다음부터 기억해요)</span>
       ${cardKeys.map(k => { const l = items.filter(e => e._card === k); return `<div class="row" style="margin-top:8px"><span style="min-width:150px"><b>${esc(k)}</b> <span class="muted">${l.length}건 · ${won(l.reduce((a,e)=>a+e.amount,0))}원</span></span>→
         <select data-cm="${esc(k)}">${set().payMethods.map(p => `<option ${p.name===cardMapNow[k]?'selected':''}>${esc(p.name)}</option>`).join('')}<option value="__new:${esc(k)}" ${cardMapNow[k]==='__new:'+k?'selected':''}>+ 새 결제수단 「${esc(k)}」</option></select></div>`; }).join('')}</div>` : ''}
@@ -1650,6 +1653,7 @@ function importCardRows(rows, pm){
       <td class="num">${won(e.amount)}</td><td><button class="btn sm ghost" data-ir="${i}">+규칙</button></td></tr>`).join('')}</table></div>
     <button class="btn pri" id="imp-go">가져오기</button> <button class="btn ghost" id="imp-x">취소</button></div>`;
   document.querySelectorAll('[data-im]').forEach(s => s.onchange = () => items[+s.dataset.im].member = s.value);
+  if ($('#imp-one')) $('#imp-one').onchange = () => { pm = $('#imp-one').value; items.forEach(e => e.payMethod = pm); };
   document.querySelectorAll('select[data-cm]').forEach(s => s.onchange = () => { const k = s.dataset.cm; cardMapNow[k] = s.value;
     items.forEach((e, i) => { if (e._card === k) { e.payMethod = s.value; const td = document.querySelector(`[data-ipm="${i}"]`); if (td) td.textContent = pmLabel(s.value); } }); });
   document.querySelectorAll('[data-ic]').forEach(s => s.onchange = () => { const it = items[+s.dataset.ic]; it.category = s.value;
@@ -1667,6 +1671,7 @@ function importCardRows(rows, pm){
   });
   $('#imp-go').onclick = async () => { const pick = items.filter((_, i) => document.querySelector(`[data-ii="${i}"]`).checked).map(({_how, _card, ...e}) => e);
     if (!pick.length) return toast('선택된 내역이 없어요');
+    if (!cardKeys.length) { set().lastImportPm = pm; sb.from('settings').upsert({id:1, data:set(), updated_at:new Date().toISOString()}).then(() => { S.selfWrite = Date.now(); }); }
     if (cardKeys.length) {   // 새 결제수단 만들고, 카드 이름 → 결제수단 짝을 기억
       const cm = set().cardMap = set().cardMap || {};
       cardKeys.forEach(k => { let v = cardMapNow[k]; if (v.startsWith('__new:')) { v = v.slice(6); if (!set().payMethods.some(p => p.name === v)) set().payMethods.push({name:v, shared:false}); } cm[k] = v; });
