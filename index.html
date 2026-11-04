@@ -156,7 +156,7 @@ const shiftMonth = (s, k) => { let [y,m] = s.split('-').map(Number); m += k; whi
 const addMonths = (ds, k) => { const [y,m,d] = ds.split('-').map(Number); const t = shiftMonth(ym(y,m), k); const [ty,tm] = t.split('-').map(Number);
   return `${t}-${String(Math.min(d, new Date(ty, tm, 0).getDate())).padStart(2,'0')}`; };
 const monthLabel = s => { const [y,m] = s.split('-'); return `${y}년 ${+m}월`; };
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2200); }
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("on"),Math.max(2200, String(msg).length*70)); }
 const set = () => S.data.settings;
 const cats = type => set().categories[type] || [];
 const groupOf = (type, name) => (cats(type).find(c => c.name === name) || {}).group || '기타';
@@ -694,6 +694,22 @@ function billRange(pm, payMonth){
   if (start <= 1) { const [y,m] = endM.split('-').map(Number); return [`${endM}-01`, `${endM}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`]; }
   return [`${shiftMonth(endM,-1)}-${String(start).padStart(2,'0')}`, `${endM}-${String(start-1).padStart(2,'0')}`];
 }
+// 카드 혜택: 전월 실적(직전 이용기간 사용액)이 기준 이상이면 이번 대금에서 대상 결제를 할인 (월 한도까지)
+const kwHit = (text, kws) => String(kws || '').split(',').map(x => x.trim()).filter(Boolean).some(k => kwNorm(text).includes(kwNorm(k)));
+function cardPerks(pm, usage, prevUsage){
+  const pk = pm.perks || {}; const rules = pk.rules || [];
+  const perfOf = l => l.filter(e => !kwHit(e.detail, pk.exclude) && !(pk.excludeCats || []).includes(e.category)).reduce((s,e) => s + (+e.amount||0), 0);
+  const prevPerf = perfOf(prevUsage), nowPerf = perfOf(usage), min = +pk.minPerf || 0;
+  const ok = !min || prevPerf >= min;
+  const used = new Set(); const lines = [];
+  rules.forEach(r => { const m = usage.filter(e => !used.has(e) && ((r.kw && kwHit(e.detail, r.kw)) || (r.cat && e.category === r.cat)));
+    m.forEach(e => used.add(e)); const base = m.reduce((s,e) => s + (+e.amount||0), 0);
+    let d = ok ? Math.round(base * (+r.rate || 0) / 100) : 0; if (+r.cap) d = Math.min(d, +r.cap);
+    lines.push({r, base, n:m.length, d, items:m}); });
+  const disc = lines.reduce((s,x) => s + x.d, 0);
+  const tagOf = new Map(); lines.forEach(x => x.items.forEach(e => tagOf.set(e, x)));
+  return {has: rules.length > 0, prevPerf, nowPerf, min, ok, lines, disc, tagOf};
+}
 function viewCardBill(){
   const pay = S.billMonth || (S.billMonth = today().slice(0,7));
   const hidden = new Set((set().cardTab || {}).hidden || []);
@@ -702,20 +718,36 @@ function viewCardBill(){
   const virt = S.data.entries.filter(e => e.type === 'expense' && e.payMethod).flatMap(e => { const n = +e.installments || 1;
     if (n <= 1) return [e]; const part = Math.floor(+e.amount / n);
     return Array.from({length:n}, (_, k) => ({...e, date:addMonths(e.date, k), amount: k ? part : +e.amount - part * (n - 1), _inst:[k+1, n]})); });
-  const rows = cards.map(pm => { const [a, z] = billRange(pm, pay); const l = virt.filter(e => e.payMethod === pm.name && e.date >= a && e.date <= z).sort((x,y) => x.date.localeCompare(y.date));
-    const d = +((pm.bill||{}).day) || 0; const [py, pmn] = pay.split('-').map(Number);
-    return {pm, a, z, l, sum: l.reduce((s,e) => s + (+e.amount||0), 0), due: d ? `${pay}-${String(Math.min(d, new Date(py, pmn, 0).getDate())).padStart(2,'0')}` : ''}; });
-  const tot = rows.reduce((s,x) => s + x.sum, 0);
+  const inRange = (pm, [a, z]) => virt.filter(e => e.payMethod === pm.name && e.date >= a && e.date <= z).sort((x,y) => x.date.localeCompare(y.date));
+  const rows = cards.map(pm => { const rg = billRange(pm, pay), l = inRange(pm, rg), prev = inRange(pm, billRange(pm, shiftMonth(pay, -1)));
+    const d = +((pm.bill||{}).day) || 0; const [py, pmn] = pay.split('-').map(Number); const sum = l.reduce((s,e) => s + (+e.amount||0), 0);
+    return {pm, a:rg[0], z:rg[1], l, sum, pk: cardPerks(pm, l, prev), due: d ? `${pay}-${String(Math.min(d, new Date(py, pmn, 0).getDate())).padStart(2,'0')}` : ''}; });
+  const tot = rows.reduce((s,x) => s + x.sum, 0), totDisc = rows.reduce((s,x) => s + x.pk.disc, 0);
   const md = ds => `${+ds.slice(5,7)}/${+ds.slice(8)}`;
+  const catOpts = sel => `<option value="">카테고리 없이</option>` + cats('expense').map(c => `<option ${c.name===sel?'selected':''}>${esc(c.name)}</option>`).join('');
   $('#main').innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:14px">${cardModeSeg()}</div>
     <div class="row" style="justify-content:space-between;margin-bottom:14px"><div class="row"><button class="btn sm" id="bp">‹</button><b style="min-width:110px;text-align:center">${+pay.slice(0,4)}년 ${+pay.slice(5)}월 결제분</b><button class="btn sm" id="bn">›</button></div>
-      <b class="num" style="font-size:18px">합계 ${won(tot)}원</b></div>
-    ${rows.map(x => { const b = x.pm.bill || {}, open = S.billOpen === x.pm.name, setOpen = S.billSet === x.pm.name;
+      <span class="row" style="gap:14px"><span class="muted">이용 ${won(tot)}원${totDisc ? ` · 할인 −${won(totDisc)}원` : ''}</span><b class="num" style="font-size:18px">예상 출금 ${won(tot - totDisc)}원</b></span></div>
+    ${rows.map(x => { const b = x.pm.bill || {}, open = S.billOpen === x.pm.name, setOpen = S.billSet === x.pm.name, perkOpen = S.perkSet === x.pm.name, pk = x.pk, pkS = x.pm.perks || {};
+      const ed = perkOpen ? (S.perkEdit = S.perkEdit && S.perkEdit._pm === x.pm.name ? S.perkEdit : {_pm:x.pm.name, minPerf:pkS.minPerf || '', exclude:pkS.exclude || '', excludeCats:[...(pkS.excludeCats || [])], rules:JSON.parse(JSON.stringify(pkS.rules || []))}) : null;
       return `<div class="panel" style="${x.sum ? '' : 'opacity:.75'}"><div class="row" style="justify-content:space-between">
         <div><b style="font-size:16px">💳 ${esc(x.pm.name)}</b>${x.pm.shared ? ' <span class="tag">공동</span>' : ''}
           <div class="muted">이용기간 ${md(x.a)} ~ ${md(x.z)}${x.due ? ` · <b>${md(x.due)} 결제</b>` : ' · 결제일 미설정'}${b.start ? '' : ' <span class="tag warn">주기 확인</span>'}</div></div>
-        <span class="row"><b class="num" style="font-size:18px">${won(x.sum)}원</b><span class="muted">${x.l.length}건</span>
-          ${x.l.length ? `<button class="btn sm" data-bo="${esc(x.pm.name)}">${open ? '접기' : '내역'}</button>` : ''}<button class="btn sm ghost" data-bs="${esc(x.pm.name)}">⚙️ 주기</button></span></div>
+        <span class="row">${pk.disc ? `<span class="muted num" style="text-decoration:line-through">${won(x.sum)}</span>` : ''}<b class="num" style="font-size:18px">${won(x.sum - pk.disc)}원</b><span class="muted">${x.l.length}건</span>
+          ${x.l.length ? `<button class="btn sm" data-bo="${esc(x.pm.name)}">${open ? '접기' : '내역'}</button>` : ''}<button class="btn sm ghost" data-pk="${esc(x.pm.name)}">🎁 혜택</button><button class="btn sm ghost" data-bs="${esc(x.pm.name)}">⚙️ 주기</button></span></div>
+        ${pk.has || pk.min ? `<div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-radius:8px;font-size:13.5px">
+          ${pk.min ? `<div>전월 실적 <b>${won(pk.prevPerf)}</b> / ${won(pk.min)}원 ${pk.ok ? '<span class="tag ok">조건 충족 — 할인 적용</span>' : `<span class="tag warn">${won(pk.min - pk.prevPerf)}원 부족 — 이번 대금은 할인 없음</span>`}</div>` : ''}
+          ${pk.lines.map(l => `<div>🎁 ${esc(l.r.kw || l.r.cat)} ${l.r.rate}%${+l.r.cap ? ` (월 ${won(l.r.cap)}원까지)` : ''}: 대상 ${won(l.base)}원 ${l.n}건 → <b style="color:var(--inc)">−${won(l.d)}원</b>${pk.ok && +l.r.cap && l.d >= +l.r.cap ? ' <span class="muted">한도 다 씀</span>' : ''}</div>`).join('')}
+          ${pk.min ? `<div class="muted">이번 이용기간 실적 ${won(pk.nowPerf)} / ${won(pk.min)}원 ${pk.nowPerf >= pk.min ? '✓ 다음 달 할인 조건 충족' : `· ${won(pk.min - pk.nowPerf)}원 더 쓰면 다음 달 할인`}</div>` : ''}</div>` : ''}
+        ${ed ? `<div style="margin-top:10px;padding:12px;background:var(--bg);border-radius:8px" data-pkbox="${esc(x.pm.name)}">
+          <div class="row"><label class="f">전월 실적 조건 (원)<input data-pmin inputmode="numeric" value="${ed.minPerf ? won(ed.minPerf) : ''}" placeholder="없으면 비우기 (예: 300,000)" style="width:170px"></label>
+            <label class="f" style="flex:1;min-width:200px">실적에서 빼는 가맹점 (쉼표로)<input data-pexc value="${esc(ed.exclude)}" placeholder="예: 관리비, 아파트, 국세, 지방세, 상품권"></label></div>
+          <div class="muted" style="margin:10px 0 4px">할인 혜택 — 가맹점 이름(쉼표로 여러 개)이나 카테고리로 정해요</div>
+          ${ed.rules.map((r, i) => `<div class="row" style="margin-bottom:6px"><input data-rkw="${i}" value="${esc(r.kw || '')}" placeholder="가맹점 키워드 (예: 주유, SK에너지, GS칼텍스)" style="flex:1;min-width:180px"><span class="muted">또는</span>
+            <select data-rcat="${i}">${catOpts(r.cat)}</select><input data-rrate="${i}" type="number" min="0" max="100" step="0.1" value="${esc(r.rate || '')}" placeholder="%" style="width:70px"><span>%</span>
+            <input data-rcap="${i}" inputmode="numeric" value="${+r.cap ? won(r.cap) : ''}" placeholder="월 한도 (원)" style="width:120px"><button class="btn sm ghost danger" data-rdel="${i}">×</button></div>`).join('')}
+          <div class="row" style="margin-top:8px;justify-content:space-between"><button class="btn sm" data-radd>+ 혜택 추가</button><span class="row"><button class="btn sm ghost" data-pkx>닫기</button><button class="btn sm pri" data-pksave="${esc(x.pm.name)}">저장</button></span></div>
+          <p class="muted" style="margin:8px 0 0">예) 실적 300,000 · 「주유, 에너지, 칼텍스, S-OIL」 10% · 한도 10,000 → 전월에 30만 원 넘게 썼으면 이번 대금에서 주유비 10%(최대 1만 원)를 빼고 보여줘요. 가계부 지출은 결제한 금액 그대로 남아요.</p></div>` : ''}
         ${setOpen ? `<div class="row" style="margin-top:10px;padding:10px;background:var(--bg);border-radius:8px">
           <label class="f">이용기간 시작일<select data-bstart><option value="1" ${(+b.start||1)===1?'selected':''}>1일 ~ 말일</option>${Array.from({length:27}, (_, i) => i + 2).map(d => `<option value="${d}" ${+b.start===d?'selected':''}>전월 ${d}일 ~ ${d-1}일</option>`).join('')}</select></label>
           <label class="f">결제일<input data-bday type="number" min="1" max="31" value="${esc(b.day||'')}" placeholder="예: 14" style="width:80px"></label>
@@ -723,15 +755,29 @@ function viewCardBill(){
           <button class="btn sm pri" data-bsave="${esc(x.pm.name)}" style="align-self:flex-end">저장</button>
           <span class="muted" style="flex-basis:100%">카드사 앱·명세서의 "이용기간"과 "결제일"을 보고 맞춰주세요. 예) 결제일 14일 → 전월 1일~말일 사용분이면 「1일 ~ 말일 · 다음 달」</span></div>` : ''}
         ${open ? `<div class="tbl" style="max-height:none;border:0;margin-top:10px"><table style="min-width:0"><tr><th>날짜</th><th>카테고리</th><th>상세</th><th>사람</th><th class="num">금액</th></tr>
-          ${x.l.map(e => `<tr><td class="nw">${e.date.slice(5).replace('-','.')}${e._inst ? ` <span class="tag">할부 ${e._inst[0]}/${e._inst[1]}</span>` : ''}</td><td>${esc(e.category)}</td><td>${esc(e.detail)}</td><td><span class="tag ${e.member}">${esc(memberName(e.member))}</span></td><td class="num">${won(e.amount)}</td></tr>`).join('')}</table></div>` : ''}</div>`; }).join('')}
-    <p class="muted">카드 대금은 가계부에 입력된 내역으로 계산한 예상 금액이에요. 연회비·이자·해외결제 수수료처럼 가계부에 없는 건 빠져 있어요. 숨긴 카드는 「월별 사용」의 카드 목록 편집에서 다시 켤 수 있어요.</p>`;
+          ${x.l.map(e => { const t = pk.tagOf.get(e); return `<tr><td class="nw">${e.date.slice(5).replace('-','.')}${e._inst ? ` <span class="tag">할부 ${e._inst[0]}/${e._inst[1]}</span>` : ''}</td><td>${esc(e.category)}</td><td>${esc(e.detail)}${t ? ` <span class="tag ${pk.ok ? 'ok' : ''}">🎁 ${t.r.rate}%${pk.ok ? '' : ' (실적 미달)'}</span>` : ''}</td><td><span class="tag ${e.member}">${esc(memberName(e.member))}</span></td><td class="num">${won(e.amount)}</td></tr>`; }).join('')}</table></div>` : ''}</div>`; }).join('')}
+    <p class="muted">카드 대금은 가계부에 입력된 내역으로 계산한 예상 금액이에요. 연회비·이자·해외결제 수수료처럼 가계부에 없는 건 빠져 있어요. 할인은 「🎁 혜택」에 적은 조건으로 계산한 예상치라, 카드사 실제 기준(실적 제외 항목 등)과 조금 다를 수 있어요.</p>`;
   bindCardMode();
   $('#bp').onclick = () => { S.billMonth = shiftMonth(pay, -1); render(); }; $('#bn').onclick = () => { S.billMonth = shiftMonth(pay, 1); render(); };
   document.querySelectorAll('[data-bo]').forEach(b => b.onclick = () => { S.billOpen = S.billOpen === b.dataset.bo ? null : b.dataset.bo; render(); });
   document.querySelectorAll('[data-bs]').forEach(b => b.onclick = () => { S.billSet = S.billSet === b.dataset.bs ? null : b.dataset.bs; render(); });
+  document.querySelectorAll('[data-pk]').forEach(b => b.onclick = () => { S.perkSet = S.perkSet === b.dataset.pk ? null : b.dataset.pk; S.perkEdit = null; render(); });
   document.querySelectorAll('[data-bsave]').forEach(b => b.onclick = () => { const box = b.parentNode, pm = set().payMethods.find(p => p.name === b.dataset.bsave);
     pm.bill = {start:+box.querySelector('[data-bstart]').value, day:+box.querySelector('[data-bday]').value || '', lag:+box.querySelector('[data-blag]').value};
     S.billSet = null; saveSettings(`${pm.name} 결제 주기를 저장했어요`); });
+  const box = document.querySelector('[data-pkbox]');
+  if (box) { const ed = S.perkEdit, num = v => +String(v||'').replace(/[^\d]/g,'') || 0;
+    const read = () => { ed.minPerf = num(box.querySelector('[data-pmin]').value); ed.exclude = box.querySelector('[data-pexc]').value.trim();
+      ed.rules.forEach((r, i) => { r.kw = box.querySelector(`[data-rkw="${i}"]`).value.trim(); r.cat = box.querySelector(`[data-rcat="${i}"]`).value; r.rate = +box.querySelector(`[data-rrate="${i}"]`).value || 0; r.cap = num(box.querySelector(`[data-rcap="${i}"]`).value); }); };
+    box.querySelectorAll('[inputmode=numeric]').forEach(i => i.oninput = () => { const n = num(i.value); i.value = n ? n.toLocaleString('ko-KR') : ''; });
+    box.querySelector('[data-radd]').onclick = () => { read(); ed.rules.push({kw: ed.rules.length ? '' : '주유, 에너지, 칼텍스, S-OIL, 오일뱅크', cat:'', rate:10, cap:0}); render(); };
+    box.querySelectorAll('[data-rdel]').forEach(b => b.onclick = () => { read(); ed.rules.splice(+b.dataset.rdel, 1); render(); });
+    box.querySelector('[data-pkx]').onclick = () => { S.perkSet = null; S.perkEdit = null; render(); };
+    box.querySelector('[data-pksave]').onclick = () => { read(); const pm = set().payMethods.find(p => p.name === ed._pm);
+      const rules = ed.rules.filter(r => (r.kw || r.cat) && r.rate);
+      pm.perks = {minPerf:ed.minPerf, exclude:ed.exclude, excludeCats:ed.excludeCats, rules};
+      S.perkSet = null; S.perkEdit = null; saveSettings(`${pm.name} 혜택을 저장했어요`); };
+  }
 }
 function viewCard(){
   if (S.cardMode === 'bill') return viewCardBill();
@@ -1572,7 +1618,12 @@ function parseCsv(text){
 async function readRows(file){
   if (/\.csv$/i.test(file.name)) return parseCsv(await readText(file));
   if (!window.XLSX) throw new Error('엑셀 읽기 모듈을 불러오지 못했어요. 새로고침 후 다시 시도하세요');
-  const wb = XLSX.read(await file.arrayBuffer(), {type:'array', cellDates:true});
+  const buf = await file.arrayBuffer();
+  // 엑셀에서 「웹 페이지」 형식으로 다시 저장한 파일은 겉껍데기만 있고 내용은 따로 있는 폴더에 있어요
+  const head = new TextDecoder('utf-8').decode(buf.slice(0, Math.min(buf.byteLength, 200000)));
+  if (/<frameset/i.test(head) && /WorksheetSource/i.test(head) && !/<td/i.test(head.replace(/"[^"]*<td[^"]*"/g, '')))
+    throw new Error('이 파일은 엑셀에서 「웹 페이지」로 다시 저장된 껍데기 파일이라 안에 내역이 없어요. 카드사에서 받은 원본 파일을 그대로 올리거나, 엑셀에서 「다른 이름으로 저장 → Excel 통합 문서(*.xlsx)」로 저장해서 올려주세요');
+  const wb = XLSX.read(buf, {type:'array', cellDates:true});
   let best = [];
   for (const name of wb.SheetNames) {   // 이용일·금액 머리글이 있는 시트를 사용
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, raw:false, defval:'', dateNF:'yyyy-mm-dd'})
