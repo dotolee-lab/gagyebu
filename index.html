@@ -368,6 +368,9 @@ function renderLogin(){
 
 function render(){
   if (!S.data) return renderLogin();
+  // 같은 화면을 다시 그릴 때 스크롤 위치(창·표 안쪽) 유지 — 체크박스·저장 후 맨 위로 튀지 않게
+  const keep = S._lastView === S.view && S._lastMonth === S.month ? {y: window.scrollY, tbls: [...document.querySelectorAll('#main .tbl')].map(t => [t.scrollTop, t.scrollLeft])} : null;
+  S._lastView = S.view; S._lastMonth = S.month;
   if (!S.month) S.month = cycleOf({type:'expense', date: today()});
   if (!S.year) S.year = +S.month.slice(0,4);
   document.title = set().title || '가계부';
@@ -382,6 +385,7 @@ function render(){
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { S.view = b.dataset.v; S.edit = null; S.catEdit = null; if (S.pending) pull(true); else render(); });
   $('#logout').onclick = async ev => { ev.preventDefault(); await sb.auth.signOut(); S.data=null; renderLogin(); };
   ({dash:viewDash, catv:viewCatv, card:viewCard, list:viewList, shared:viewShared, rec:viewRec, loan:viewLoan, salary:viewSalary, year:viewYear, set:viewSet})[S.view]();
+  if (keep) { document.querySelectorAll('#main .tbl').forEach((t, i) => { if (keep.tbls[i]) { t.scrollTop = keep.tbls[i][0]; t.scrollLeft = keep.tbls[i][1]; } }); window.scrollTo(0, keep.y); }
 }
 
 function monthPicker(){
@@ -612,7 +616,7 @@ function viewList(){
     const id = c.dataset.sel, i = c.dataset.si != null ? +c.dataset.si : null;
     if (ev.shiftKey && i != null && S._lastSel != null) { const [a, b] = [Math.min(i, S._lastSel), Math.max(i, S._lastSel)]; rowIds.slice(a, b + 1).forEach(x => c.checked ? S.sel.add(x) : S.sel.delete(x)); }
     else c.checked ? S.sel.add(id) : S.sel.delete(id);
-    if (i != null) S._lastSel = i; const y = window.scrollY; render(); window.scrollTo(0, y); });
+    if (i != null) S._lastSel = i; render(); });
   if ($('#sel-all')) $('#sel-all').onclick = ev => { rowIds.forEach(x => ev.target.checked ? S.sel.add(x) : S.sel.delete(x)); render(); };
   const picked = () => [...S.sel].map(id => S.data.entries.find(x => x.id === id)).filter(Boolean);
   const bulk = (fn, msg) => { const l = picked(); if (!l.length) return; ops(l.map(e => ({op:'upsert', col:'entries', item:fn({...e})})), msg(l.length)); S.sel.clear(); };
@@ -683,29 +687,56 @@ function viewCatv(){
 // ===== 카드별 =====
 function viewCard(){
   const list = entriesOf(S.month).filter(e => e.type === 'expense');
+  const hidden = new Set((set().cardTab || {}).hidden || []);
+  const idOf = k => k || '__none';
   const pmOrder = set().payMethods.map(p => p.name);
   const by = {}; list.forEach(e => { const k = e.payMethod || ''; (by[k] = by[k] || []).push(e); });
-  const keys = Object.keys(by).sort((a,b) => (a === '') - (b === '') || (pmOrder.indexOf(a) + 1 || 99) - (pmOrder.indexOf(b) + 1 || 99));
-  const sumOf = l => l.reduce((a,e) => a + (+e.amount||0), 0);
-  const sel = S.cardSel && by[S.cardSel === '__none' ? '' : S.cardSel] ? S.cardSel : 'all';
-  const shown = sel === 'all' ? keys : [sel === '__none' ? '' : sel];
+  // 보이는 카드: 이번 달 쓴 카드 + 결제수단 목록에 있는 카드 (숨긴 건 빼고)
+  const keys = [...new Set(Object.keys(by).concat(pmOrder))].filter(k => !hidden.has(idOf(k)))
+    .sort((a,b) => (a === '') - (b === '') || (pmOrder.indexOf(a) + 1 || 99) - (pmOrder.indexOf(b) + 1 || 99));
+  const sumOf = l => (l || []).reduce((a,e) => a + (+e.amount||0), 0);
+  const hidList = list.filter(e => hidden.has(idOf(e.payMethod || '')));
+  const sel = S.cardSel && keys.map(idOf).includes(S.cardSel) ? S.cardSel : 'all';
+  const shown = sel === 'all' ? keys.filter(k => (by[k] || []).length) : [sel === '__none' ? '' : sel];
   const label = k => k || '결제수단 없음';
-  $('#main').innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}<span class="muted">이번 달 지출을 결제한 카드·계좌별로 모았어요 (할부는 달마다 나눠서)</span></div>
-    <div class="chips" style="margin-bottom:14px"><button class="chip" data-cs="all" style="cursor:pointer;padding:5px 12px;${sel==='all'?'background:var(--ink);color:var(--bg);border-color:var(--ink)':''}">전체 <b class="num">${won(sumOf(list))}</b></button>
-      ${keys.map(k => { const id = k || '__none'; return `<button class="chip" data-cs="${esc(id)}" style="cursor:pointer;padding:5px 12px;${sel===id?'background:var(--ink);color:var(--bg);border-color:var(--ink)':''}">${esc(label(k))}${isSharedPM(k) ? ' <span class="tag">공동</span>' : ''} <b class="num">${won(sumOf(by[k]))}</b> <span style="opacity:.6">${by[k].length}건</span></button>`; }).join('')}</div>
-    ${keys.length ? shown.map(k => { const l = by[k].slice().sort((a,b) => b.date.localeCompare(a.date));
+  const ed = S.cardEdit;
+  const allKeys = [...new Set(pmOrder.concat(Object.keys(by)))];
+  $('#main').innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}
+      <span class="row"><span class="muted">할부는 달마다 나눠서 보여줘요</span><button class="btn sm" id="ce">${ed ? '편집 닫기' : '✏️ 카드 목록 편집'}</button></span></div>
+    ${ed ? `<div class="panel" style="border-color:var(--accent)"><h2>카드 목록 편집 <small>체크를 끄면 카드별 탭에서 숨겨요 (내역은 그대로)</small></h2>
+      <div class="chips" style="margin-bottom:12px">${allKeys.map(k => `<label class="chip" style="padding:5px 12px;cursor:pointer"><input type="checkbox" data-ch="${esc(idOf(k))}" ${hidden.has(idOf(k)) ? '' : 'checked'}> ${esc(label(k))}${isSharedPM(k) ? ' <span class="tag">공동</span>' : ''}</label>`).join('')}</div>
+      <div class="row"><input id="ce-new" placeholder="새 카드 이름 (예: 현대카드(남편))" style="min-width:220px"><label class="row muted" style="gap:4px"><input type="checkbox" id="ce-shared"> 공동생활비 카드</label><button class="btn sm pri" id="ce-add">카드 추가</button></div>
+      <p class="muted">추가한 카드는 내역 입력·카드내역 가져오기의 결제수단에도 나와요. 결제수단 이름 바꾸기·삭제는 설정 탭에서 할 수 있어요.</p></div>` : ''}
+    <div class="chips" style="margin-bottom:14px"><button class="chip" data-cs="all" style="cursor:pointer;padding:5px 12px;${sel==='all'?'background:var(--ink);color:var(--bg);border-color:var(--ink)':''}">전체 <b class="num">${won(sumOf(list) - sumOf(hidList))}</b></button>
+      ${keys.map(k => { const id = idOf(k), l = by[k] || []; return `<button class="chip" data-cs="${esc(id)}" style="cursor:pointer;padding:5px 12px;${sel===id?'background:var(--ink);color:var(--bg);border-color:var(--ink)':''}${l.length ? '' : ';opacity:.55'}">${esc(label(k))}${isSharedPM(k) ? ' <span class="tag">공동</span>' : ''} <b class="num">${won(sumOf(l))}</b> <span style="opacity:.6">${l.length}건</span></button>`; }).join('')}
+      ${hidList.length ? `<span class="muted" style="align-self:center">숨긴 결제수단 ${won(sumOf(hidList))}원 (${hidList.length}건)은 빠져 있어요</span>` : ''}</div>
+    ${shown.length ? shown.map(k => { const l = (by[k] || []).slice().sort((a,b) => b.date.localeCompare(a.date));
       const byCat = {}; l.forEach(e => byCat[catKey(e)] = (byCat[catKey(e)]||0) + +e.amount);
-      return `<div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">💳 ${esc(label(k))}${isSharedPM(k) ? ' <span class="tag">공동생활비 카드</span>' : ''}</h2><b class="num" style="font-size:18px">${won(sumOf(l))}원 <span class="muted" style="font-weight:400">${l.length}건</span></b></div>
-        <div class="chips" style="margin:10px 0">${Object.entries(byCat).sort((a,b) => b[1]-a[1]).map(([c,v]) => `<span class="chip" style="padding-right:10px">${esc(c)} <b class="num">${won(v)}</b></span>`).join('')}</div>
+      return `<div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">💳 ${esc(label(k))}${isSharedPM(k) ? ' <span class="tag">공동생활비 카드</span>' : ''}</h2>
+          <span class="row"><b class="num" style="font-size:18px">${won(sumOf(l))}원 <span class="muted" style="font-weight:400">${l.length}건</span></b><button class="btn sm pri" data-cadd="${esc(k)}">+ 이 카드로 추가</button></span></div>
+        ${l.length ? `<div class="chips" style="margin:10px 0">${Object.entries(byCat).sort((a,b) => b[1]-a[1]).map(([c,v]) => `<span class="chip" style="padding-right:10px">${esc(c)} <b class="num">${won(v)}</b></span>`).join('')}</div>
         ${mobileCards(l)}
-        <div class="tbl pc-only" style="max-height:none;border:0"><table><tr><th>날짜</th><th>카테고리</th><th>상세</th><th>사람</th><th class="num">금액</th><th>메모</th></tr>
+        <div class="tbl pc-only" style="max-height:none;border:0"><table><tr><th>날짜</th><th>카테고리</th><th>상세</th><th>사람</th><th class="num">금액</th><th>메모</th><th></th></tr>
         ${l.map(e => `<tr class="m-${e.member}"><td class="nw">${e.date.slice(5).replace('-','.')}${e._inst ? ` <span class="tag">할부 ${e._inst[0]}/${e._inst[1]}</span>` : ''}</td><td>${esc(e.category)}</td><td>${esc(e.detail)}</td>
           <td class="mem">${esc(memberName(e.member))}${needsSettle(e) ? ' <span class="tag warn">정산 전</span>' : ''}${needsReimb(e) ? ` <span class="tag h">${esc(memberName(reimbWho(e)))} 받을 돈</span>` : ''}</td>
-          <td class="num">${won(e.amount)}</td><td class="muted">${esc(e.memo)}</td></tr>`).join('')}</table></div></div>`; }).join('')
+          <td class="num">${won(e.amount)}</td><td class="muted">${esc(e.memo)}</td>
+          <td class="nw"><button class="btn sm ghost" data-ke="${e.id}">수정</button><button class="btn sm ghost danger" data-kd="${e.id}">삭제</button></td></tr>`).join('')}</table></div>`
+        : '<div class="muted" style="margin-top:8px">이번 달 이 카드로 쓴 내역이 없어요</div>'}</div>`; }).join('')
       : '<div class="panel empty">이번 달 지출이 아직 없어요</div>'}`;
   bindMonth();
   bindCardOpen('card');
   document.querySelectorAll('[data-cs]').forEach(b => b.onclick = () => { S.cardSel = b.dataset.cs; render(); });
+  $('#ce').onclick = () => { S.cardEdit = !S.cardEdit; render(); };
+  document.querySelectorAll('[data-ch]').forEach(c => c.onchange = () => { const ct = set().cardTab = set().cardTab || {}; const h = new Set(ct.hidden || []);
+    c.checked ? h.delete(c.dataset.ch) : h.add(c.dataset.ch); ct.hidden = [...h]; saveSettings(c.checked ? '카드를 다시 보여줘요' : '카드를 숨겼어요'); });
+  if ($('#ce-add')) $('#ce-add').onclick = () => { const n = $('#ce-new').value.trim(); if (!n) return toast('카드 이름을 적어주세요');
+    if (set().payMethods.some(p => p.name === n)) return toast('이미 있는 이름이에요');
+    set().payMethods.push({name:n, shared:$('#ce-shared').checked}); S.cardSel = n; saveSettings(`'${n}'을(를) 추가했어요`); };
+  document.querySelectorAll('[data-cadd]').forEach(b => b.onclick = () => { S.returnTo = 'card'; S.view = 'list'; S.f.type = 'expense';
+    S.edit = {...newEntry('expense'), payMethod:b.dataset.cadd, date: cycleRange(S.month).slice(-10) < today() ? cycleRange(S.month).slice(-10) : today()}; render(); window.scrollTo(0,0); });
+  document.querySelectorAll('[data-ke]').forEach(b => b.onclick = () => { S.returnTo = 'card'; S.view = 'list'; S.edit = {...realEntry(b.dataset.ke)}; render(); window.scrollTo(0,0); });
+  document.querySelectorAll('[data-kd]').forEach(b => b.onclick = () => { const e = realEntry(b.dataset.kd);
+    if (confirm(`${e.date} ${e.detail || e.category} ${won(e.amount)}원을 삭제할까요?${+e.installments > 1 ? ` (${e.installments}개월 할부 전체가 지워져요)` : ''}`)) ops([{op:'delete', col:'entries', item:{id:e.id}}], '삭제했어요'); });
 }
 
 // ===== 공동생활비 =====
