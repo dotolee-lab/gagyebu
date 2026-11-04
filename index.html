@@ -520,7 +520,7 @@ function newEntry(type='expense'){ return {type, date:today(), amount:0, categor
 // 휴대폰용 카드 목록 (날짜별로 묶음). inline=true면 카테고리·사람을 바로 바꾸는 선택 칸(공동생활비 탭)
 function mobileCards(list, opt = {}){
   if (!list.length) return '<div class="mlist"><div class="empty">내역이 없어요</div></div>';
-  const days = {}; [...list].sort((a,b) => b.date.localeCompare(a.date)).forEach(e => (days[e.date] = days[e.date] || []).push(e));
+  const days = {}; [...list].sort((a,b) => opt.asc ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)).forEach(e => (days[e.date] = days[e.date] || []).push(e));
   const wd = ds => '일월화수목금토'[new Date(ds + 'T00:00:00').getDay()];
   const memOpts = sel => set().members.map(m => [m.id, m.name]).concat([['s','공용']]).map(([id,n]) => `<option value="${id}" ${id===sel?'selected':''}>${esc(n)}</option>`).join('');
   return `<div class="mlist">${Object.entries(days).map(([d, es]) => `
@@ -562,7 +562,11 @@ function viewList(){
   if (F.member!=='all') list = list.filter(e => e.member===F.member);
   if (F.cat!=='all') list = list.filter(e => e.category===F.cat);
   if (F.q) { const q = F.q.toLowerCase(); list = list.filter(e => [e.detail,e.memo,e.category,e.payMethod].join(' ').toLowerCase().includes(q)); }
-  list.sort((a,b) => b.date.localeCompare(a.date) || (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  // 정렬: 날짜(최근순·빠른순) / 금액(큰순·작은순) — 마지막으로 고른 걸 기억해요
+  if (!F.sort) { try { F.sort = localStorage.getItem('gagyebu-sort') || 'date-desc'; } catch(e){ F.sort = 'date-desc'; } }
+  const [sk, sd] = F.sort.split('-'), sgn = sd === 'asc' ? 1 : -1;
+  list.sort((a,b) => sgn * (sk === 'amt' ? (+a.amount||0) - (+b.amount||0) : a.date.localeCompare(b.date)) || sgn * (a.date.localeCompare(b.date)) || (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  const sortArrow = k => sk === k ? (sd === 'asc' ? ' ▲' : ' ▼') : ' <span style="opacity:.35">↕</span>';
   const sumOf = l => l.reduce((a,e) => a + (+e.amount||0), 0);
   const editing = S.edit === 'new' ? newEntry(T) : S.edit;
   const whoLabel = {income:'받는 사람', expense:'사람', saving:'계좌주'}[T];
@@ -587,7 +591,8 @@ function viewList(){
       <select id="fc"><option value="all">모든 카테고리</option>${cats(T).map(c=>`<option ${F.cat===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
       <input id="fq" placeholder="검색 (가맹점, 메모)" value="${esc(F.q)}" style="flex:1;min-width:140px">
     </div>
-    <div class="muted" style="margin-bottom:8px">${list.length}건 · 합계 ${won(sumOf(list.filter(countsInTotal)))}원${T==='saving' ? ` · ${monthLabel(S.month)}까지 누적 <b>${won(savingUpTo(S.month))}원</b>` : ''}${list.some(fromSharedFund) ? ` (공동생활비에서 쓴 ${won(sumOf(list.filter(fromSharedFund)))}원은 따로)` : ''}${list.some(isPersonal) ? ` (개인 정산 ${won(sumOf(list.filter(isPersonal)))}원은 따로)` : ''}</div>
+    <div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="muted">${list.length}건 · 합계 ${won(sumOf(list.filter(countsInTotal)))}원${T==='saving' ? ` · ${monthLabel(S.month)}까지 누적 <b>${won(savingUpTo(S.month))}원</b>` : ''}${list.some(fromSharedFund) ? ` (공동생활비에서 쓴 ${won(sumOf(list.filter(fromSharedFund)))}원은 따로)` : ''}${list.some(isPersonal) ? ` (개인 정산 ${won(sumOf(list.filter(isPersonal)))}원은 따로)` : ''}</span>
+      <select id="fsort" style="font-size:13px;padding:5px 8px">${[['date-desc','날짜 최근순'],['date-asc','날짜 빠른순'],['amt-desc','금액 큰순'],['amt-asc','금액 작은순']].map(([k,l]) => `<option value="${k}" ${F.sort===k?'selected':''}>${l}</option>`).join('')}</select></div>
     ${(() => { S.sel = S.sel || new Set(); const ids = new Set(list.map(e => String(e.id).split('#')[0])); [...S.sel].forEach(id => { if (!ids.has(id)) S.sel.delete(id); });
       return S.sel.size ? `<div class="panel" id="bulk" style="position:sticky;top:96px;z-index:4;border-color:var(--accent);padding:12px 14px;margin-bottom:10px">
       <div class="row" style="gap:8px"><b>${S.sel.size}건 선택</b><span class="muted">합계 ${won(list.filter(e => S.sel.has(String(e.id).split('#')[0])).reduce((a,e) => a + +e.amount, 0))}원</span>
@@ -595,9 +600,9 @@ function viewList(){
         <span class="row" style="gap:6px"><select id="bk-cat"><option value="">카테고리…</option>${cats(T).map(c => `<option>${esc(c.name)}</option>`).join('')}</select>
           <select id="bk-mem"><option value="">사람…</option>${set().members.concat([{id:'s',name:'공용'}]).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select><button class="btn sm" id="bk-apply">적용</button></span>
         <button class="btn sm ghost" id="bk-clear">선택 해제</button><button class="btn sm ghost danger" id="bk-del">삭제</button></div></div>` : ''; })()}
-    ${mobileCards(list, {group:T==='expense', sel:true})}
+    ${mobileCards(list, {group:T==='expense', sel:true, asc: F.sort === 'date-asc'})}
     <div class="tbl pc-only"><table>
-      <tr><th style="width:28px"><input type="checkbox" id="sel-all" title="모두 선택" ${list.length && list.every(e => S.sel.has(String(e.id).split('#')[0])) ? 'checked' : ''} style="width:16px;height:16px"></th><th>날짜</th><th>카테고리</th><th>상세</th><th>${whoLabel}</th><th>${pmLabel}</th><th class="num">금액</th><th>메모</th><th></th></tr>
+      <tr><th style="width:28px"><input type="checkbox" id="sel-all" title="모두 선택" ${list.length && list.every(e => S.sel.has(String(e.id).split('#')[0])) ? 'checked' : ''} style="width:16px;height:16px"></th><th data-srt="date" style="cursor:pointer" title="눌러서 정렬 바꾸기">날짜${sortArrow('date')}</th><th>카테고리</th><th>상세</th><th>${whoLabel}</th><th>${pmLabel}</th><th class="num" data-srt="amt" style="cursor:pointer" title="눌러서 정렬 바꾸기">금액${sortArrow('amt')}</th><th>메모</th><th></th></tr>
       ${list.map((e, i) => `<tr class="m-${e.member}" ${S.sel.has(String(e.id).split('#')[0]) ? 'style="background:var(--accent-soft)"' : ''}>
         <td><input type="checkbox" data-sel="${String(e.id).split('#')[0]}" data-si="${i}" ${S.sel.has(String(e.id).split('#')[0]) ? 'checked' : ''} style="width:16px;height:16px"></td>
         <td class="num" style="text-align:left">${e.date.slice(5).replace('-','.')}${e._inst?` <span class="tag" title="총 ${won(e._total)}원 ${e._inst[1]}개월 할부">할부 ${e._inst[0]}/${e._inst[1]}</span>`:e.month?' <span class="tag" title="귀속월 직접 지정">지정</span>':''}</td>
@@ -636,6 +641,9 @@ function viewList(){
   }
   document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { F.grp = b.dataset.g; F.cat = 'all'; render(); });
   $('#fm').onchange = ev => { F.member = ev.target.value; render(); };
+  const setSort = v => { F.sort = v; try { localStorage.setItem('gagyebu-sort', v); } catch(e){} render(); };
+  $('#fsort').onchange = ev => setSort(ev.target.value);
+  document.querySelectorAll('[data-srt]').forEach(th => th.onclick = () => { const k = th.dataset.srt; setSort(sk === k ? `${k}-${sd === 'asc' ? 'desc' : 'asc'}` : `${k}-${k === 'date' ? 'asc' : 'desc'}`); });
   $('#fc').onchange = ev => { F.cat = ev.target.value; render(); };
   $('#fq').oninput = ev => { F.q = ev.target.value; clearTimeout(S._q); S._q = setTimeout(() => { render(); const i=$('#fq'); i.focus(); i.setSelectionRange(i.value.length,i.value.length); }, 300); };
   // 복사: 같은 내용으로 다음 달 날짜의 새 입력창 열기 (◀ ▶로 달 조정)
