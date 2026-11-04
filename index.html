@@ -1425,7 +1425,7 @@ function viewSet(){
         <label class="btn">백업 복원<input type="file" id="imp-json" accept=".json" hidden></label>
         <label class="btn">내역 파일 추가 (기존 유지)<input type="file" id="imp-merge" accept=".json" hidden></label></div>
       <div id="merge-prev"></div>
-      <p class="muted" style="margin:0 0 6px">카드사 이용내역 가져오기 — 카드사에서 받은 <b>엑셀(xls·xlsx) 또는 CSV</b> 파일을 그대로 올리세요. <b>이용일자·가맹점·이용금액</b> 열을 자동으로 찾아요. (구분·세부내용·내용 열이 있으면 사람·메모·카테고리로 들어가요)</p>
+      <p class="muted" style="margin:0 0 6px">카드사 이용내역 가져오기 — 카드사에서 받은 <b>엑셀(xls·xlsx) 또는 CSV</b> 파일을 그대로 올리세요. <b>이용일자·가맹점·이용금액</b> 열을 자동으로 찾아요. (구분·세부내용·내용 열이 있으면 사람·메모·카테고리로 들어가요) <b>롯데카드처럼 여러 카드가 한 파일에 섞여 있으면 「이용카드」 열로 알아서 나누고, 취소된 결제는 빼요.</b> 왼쪽 선택칸은 카드 열이 없는 파일에만 쓰여요.</p>
       <div class="row"><select id="imp-pm">${st.payMethods.map(p=>`<option>${esc(p.name)}</option>`).join('')}</select>
         <label class="btn pri">카드 내역 파일 선택<input type="file" id="imp-csv" accept=".xls,.xlsx,.csv,text/csv" hidden></label></div>
       <div id="imp-prev"></div></div>`;
@@ -1604,36 +1604,54 @@ function importCardRows(rows, pm){
   const cD = col(/이용일/, /매출일/, /거래일/, /승인일/, /사용일/, /날짜|일자/),
         cA = col(/이용금액/, /승인금액/, /매출금액/, /거래금액/, /^금액/, /금액/),
         cM = col(/가맹점/, /이용하신곳|이용처|사용처/, /^내용$/),
-        cWho = col(/^구분$/), cDet = col(/세부/), cInst = col(/할부개월|할부기간/), cCat = h.findIndex((c,i) => /^(내용|메모|분류)$/.test(c) && i !== cM);
+        cWho = col(/^구분$/), cDet = col(/세부/), cInst = col(/할부개월|할부기간/), cCat = h.findIndex((c,i) => /^(내용|메모|분류)$/.test(c) && i !== cM),
+        cCard = col(/이용카드|카드명|카드종류|사용카드/), cCancel = col(/취소여부/), cCancelAmt = col(/취소금액/), cBuy = col(/매입여부/);
+  // 한 파일에 여러 카드가 섞여 있으면(롯데카드 등) 카드 이름으로 결제수단을 나눠요
+  const cardKey = raw => String(raw || '').replace(/^\s*(본인|가족)\s*/, '').replace(/\(.*?\)/g, '').replace(/^모바일\s*/, '').trim();
+  const pmBase = n => kwNorm(String(n).replace(/\(.*?\)/g, ''));
+  const guessPm = k => { const saved = (set().cardMap || {})[k]; if (saved && set().payMethods.some(p => p.name === saved)) return saved;
+    const kk = kwNorm(k); const hit = set().payMethods.find(p => pmBase(p.name) && (kk.includes(pmBase(p.name)) || pmBase(p.name).includes(kk))); return hit ? hit.name : '__new:' + k; };
+  const cardMapNow = {}; let canceled = 0;
   const whoMap = {'공용':'s'}; set().members.forEach(m => whoMap[m.name] = m.id);
   const items = [], skipped = [];
   for (const r of rows.slice(hi+1)) {
     const date = parseDate(r[cD]);
     const amt = +(r[cA]||'').replace(/[^\d-]/g,'');
     if (!date || !amt) { skipped.push(r); continue; }
+    // 취소된 결제는 빼요 (취소여부 Y 또는 취소금액이 있는 행)
+    if ((cCancel >= 0 && /^y/i.test(String(r[cCancel]).trim())) || (cCancelAmt >= 0 && +(String(r[cCancelAmt]||'').replace(/[^\d]/g,'')) >= Math.abs(amt)) || amt < 0) { canceled++; continue; }
+    let rowPm = pm, ck = '';
+    if (cCard >= 0 && r[cCard]) { ck = cardKey(r[cCard]); if (!(ck in cardMapNow)) cardMapNow[ck] = guessPm(ck); rowPm = cardMapNow[ck]; }
     const detail = cM >= 0 ? r[cM] : '';
     const catRaw = cCat >= 0 ? (r[cCat]||'').replace(/^\d+월\s*/,'') : '';
-    const auto = classify(detail, pm);
+    const auto = classify(detail, rowPm.startsWith('__new:') ? '' : rowPm);
     const category = cats('expense').some(c => c.name === catRaw) ? catRaw : auto.category;
     const member = whoMap[r[cWho]] || auto.member;
     // 같은 날짜·금액·가맹점이 이미 있으면 건너뜀 (중복 업로드 방지)
     if (S.data.entries.some(e => e.date===date && +e.amount===amt && e.detail===detail)) { skipped.push(r); continue; }
-    items.push({id:uid(), type:'expense', date, amount:amt, category, detail, member, payMethod:pm, _how:auto.how,
+    items.push({id:uid(), type:'expense', date, amount:amt, category, detail, member, payMethod:rowPm, _how:auto.how, _card:ck,
       memo: cDet >= 0 ? r[cDet] : '', month:'', settled:false, ...((n => n > 1 ? {installments:n} : {})(cInst >= 0 ? +(String(r[cInst]).match(/\d+/) || [0])[0] : 0))});
   }
-  if (!items.length) return toast('새로 가져올 내역이 없어요');
+  if (!items.length) return toast(`새로 가져올 내역이 없어요${canceled ? ` (취소 ${canceled}건 제외)` : ''}`);
+  const cardKeys = Object.keys(cardMapNow);
+  const pmLabel = v => v.startsWith('__new:') ? v.slice(6) + ' (새로 추가)' : v;
   const memOpts = sel => set().members.map(m => [m.id, m.name]).concat([['s','공용']]).map(([id,n]) => `<option value="${id}" ${id===sel?'selected':''}>${esc(n)}</option>`).join('');
   const catOpts = sel => cats('expense').map(c => `<option ${c.name===sel?'selected':''}>${esc(c.name)}</option>`).join('');
   const howTag = {rule:'규칙', learn:'지난 기록', file:'파일', base:'기본값'};
-  $('#imp-prev').innerHTML = `<div style="margin-top:12px"><b>${items.length}건</b> 가져오기 (합계 ${won(items.reduce((a,e)=>a+e.amount,0))}원, 중복·빈 행 ${skipped.length}건 제외)
+  $('#imp-prev').innerHTML = `<div style="margin-top:12px"><b>${items.length}건</b> 가져오기 (합계 ${won(items.reduce((a,e)=>a+e.amount,0))}원, 중복·빈 행 ${skipped.length}건${canceled ? ` · 취소 ${canceled}건` : ''} 제외)
+    ${cardKeys.length ? `<div class="panel" style="margin:10px 0;padding:12px;border-color:var(--accent)"><b>💳 카드 ${cardKeys.length}종류가 섞여 있어요</b> <span class="muted">카드 이름으로 결제수단을 나눴어요. 맞는지 확인하세요 (다음부터 기억해요)</span>
+      ${cardKeys.map(k => { const l = items.filter(e => e._card === k); return `<div class="row" style="margin-top:8px"><span style="min-width:150px"><b>${esc(k)}</b> <span class="muted">${l.length}건 · ${won(l.reduce((a,e)=>a+e.amount,0))}원</span></span>→
+        <select data-cm="${esc(k)}">${set().payMethods.map(p => `<option ${p.name===cardMapNow[k]?'selected':''}>${esc(p.name)}</option>`).join('')}<option value="__new:${esc(k)}" ${cardMapNow[k]==='__new:'+k?'selected':''}>+ 새 결제수단 「${esc(k)}」</option></select></div>`; }).join('')}</div>` : ''}
     <div class="muted">사람·카테고리를 고칠 수 있어요. <b>+규칙</b>을 누르면 다음부터 그 가맹점은 자동으로 같은 분류가 돼요. 체크를 끄면 가져오지 않아요.</div>
     <div class="tbl" style="max-height:420px;margin:8px 0"><table>
-      <tr><th></th><th>날짜</th><th>가맹점</th><th>사람</th><th>카테고리</th><th class="num">금액</th><th></th></tr>
-      ${items.map((e,i)=>`<tr><td><input type="checkbox" data-ii="${i}" checked></td><td class="num" style="text-align:left">${e.date.slice(5)}</td><td>${esc(e.detail)}</td>
+      <tr><th></th><th>날짜</th><th>가맹점</th>${cardKeys.length ? '<th>카드</th>' : ''}<th>사람</th><th>카테고리</th><th class="num">금액</th><th></th></tr>
+      ${items.map((e,i)=>`<tr><td><input type="checkbox" data-ii="${i}" checked></td><td class="num" style="text-align:left">${e.date.slice(5)}</td><td>${esc(e.detail)}</td>${cardKeys.length ? `<td class="muted nw" data-ipm="${i}">${esc(pmLabel(e.payMethod))}</td>` : ''}
       <td><select data-im="${i}">${memOpts(e.member)}</select></td><td><select data-ic="${i}">${catOpts(e.category)}</select> <span class="muted" style="font-size:11px">${howTag[e._how]||''}</span></td>
       <td class="num">${won(e.amount)}</td><td><button class="btn sm ghost" data-ir="${i}">+규칙</button></td></tr>`).join('')}</table></div>
     <button class="btn pri" id="imp-go">가져오기</button> <button class="btn ghost" id="imp-x">취소</button></div>`;
   document.querySelectorAll('[data-im]').forEach(s => s.onchange = () => items[+s.dataset.im].member = s.value);
+  document.querySelectorAll('select[data-cm]').forEach(s => s.onchange = () => { const k = s.dataset.cm; cardMapNow[k] = s.value;
+    items.forEach((e, i) => { if (e._card === k) { e.payMethod = s.value; const td = document.querySelector(`[data-ipm="${i}"]`); if (td) td.textContent = pmLabel(s.value); } }); });
   document.querySelectorAll('[data-ic]').forEach(s => s.onchange = () => { const it = items[+s.dataset.ic]; it.category = s.value;
     const who = groupOf('expense', s.value) === PERSONAL_GROUP && personOfCat(s.value);
     if (who) { it.member = who; document.querySelector(`[data-im="${s.dataset.ic}"]`).value = who; } });
@@ -1647,8 +1665,13 @@ function importCardRows(rows, pm){
       document.querySelector(`[data-im="${j}"]`).value = e.member; document.querySelector(`[data-ic="${j}"]`).value = e.category; } });
     sb.from('settings').upsert({id:1, data:set(), updated_at:new Date().toISOString()}).then(() => { S.selfWrite = Date.now(); toast(`'${kw}' 규칙을 저장했어요`); });
   });
-  $('#imp-go').onclick = () => { const pick = items.filter((_, i) => document.querySelector(`[data-ii="${i}"]`).checked).map(({_how, ...e}) => e);
+  $('#imp-go').onclick = async () => { const pick = items.filter((_, i) => document.querySelector(`[data-ii="${i}"]`).checked).map(({_how, _card, ...e}) => e);
     if (!pick.length) return toast('선택된 내역이 없어요');
+    if (cardKeys.length) {   // 새 결제수단 만들고, 카드 이름 → 결제수단 짝을 기억
+      const cm = set().cardMap = set().cardMap || {};
+      cardKeys.forEach(k => { let v = cardMapNow[k]; if (v.startsWith('__new:')) { v = v.slice(6); if (!set().payMethods.some(p => p.name === v)) set().payMethods.push({name:v, shared:false}); } cm[k] = v; });
+      pick.forEach(e => { if (e.payMethod.startsWith('__new:')) e.payMethod = e.payMethod.slice(6); });
+      try { check(await sb.from('settings').upsert({id:1, data:set(), updated_at:new Date().toISOString()})); S.selfWrite = Date.now(); } catch(e){ return toast('설정 저장 실패: ' + e.message); } }
     ops(pick.map(item => ({op:'upsert', col:'entries', item})), `${pick.length}건을 가져왔어요`); };
   $('#imp-x').onclick = () => $('#imp-prev').innerHTML = '';
 }
