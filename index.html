@@ -517,8 +517,8 @@ function mobileCards(list, opt = {}){
   const memOpts = sel => set().members.map(m => [m.id, m.name]).concat([['s','공용']]).map(([id,n]) => `<option value="${id}" ${id===sel?'selected':''}>${esc(n)}</option>`).join('');
   return `<div class="mlist">${Object.entries(days).map(([d, es]) => `
     <div class="mday"><span>${+d.slice(5,7)}월 ${+d.slice(8)}일 (${wd(d)})</span><span class="num">${won(es.reduce((a,e) => a + +e.amount, 0))}</span></div>
-    ${es.map(e => `<div class="mcard m-${e.member}" data-open="${e.id}">
-      <div class="mrow"><span class="mt">${esc(e.detail || e.category)}</span>
+    ${es.map(e => `<div class="mcard m-${e.member}" data-open="${e.id}" ${opt.sel && S.sel.has(String(e.id).split('#')[0]) ? 'style="outline:2px solid var(--accent)"' : ''}>
+      <div class="mrow"><span class="mt">${opt.sel ? `<input type="checkbox" data-sel="${String(e.id).split('#')[0]}" ${S.sel.has(String(e.id).split('#')[0]) ? 'checked' : ''} style="width:18px;height:18px;vertical-align:-3px;margin-right:6px">` : ''}${esc(e.detail || e.category)}</span>
         <span class="mamt t-${e.type}">${fromSharedFund(e) && !opt.inline ? '<span class="muted" style="font-weight:400;font-size:12px">공동 </span>' : isPersonal(e) ? '<span class="muted" style="font-weight:400;font-size:12px">개인 </span>' : ''}${won(e.amount)}</span></div>
       <div class="msub">
         ${opt.inline ? `<select data-xc="${e.id}">${cats('expense').map(c => `<option ${c.name===e.category?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
@@ -580,10 +580,18 @@ function viewList(){
       <input id="fq" placeholder="검색 (가맹점, 메모)" value="${esc(F.q)}" style="flex:1;min-width:140px">
     </div>
     <div class="muted" style="margin-bottom:8px">${list.length}건 · 합계 ${won(sumOf(list.filter(countsInTotal)))}원${T==='saving' ? ` · ${monthLabel(S.month)}까지 누적 <b>${won(savingUpTo(S.month))}원</b>` : ''}${list.some(fromSharedFund) ? ` (공동생활비에서 쓴 ${won(sumOf(list.filter(fromSharedFund)))}원은 따로)` : ''}${list.some(isPersonal) ? ` (개인 정산 ${won(sumOf(list.filter(isPersonal)))}원은 따로)` : ''}</div>
-    ${mobileCards(list, {group:T==='expense'})}
+    ${(() => { S.sel = S.sel || new Set(); const ids = new Set(list.map(e => String(e.id).split('#')[0])); [...S.sel].forEach(id => { if (!ids.has(id)) S.sel.delete(id); });
+      return S.sel.size ? `<div class="panel" id="bulk" style="position:sticky;top:96px;z-index:4;border-color:var(--accent);padding:12px 14px;margin-bottom:10px">
+      <div class="row" style="gap:8px"><b>${S.sel.size}건 선택</b><span class="muted">합계 ${won(list.filter(e => S.sel.has(String(e.id).split('#')[0])).reduce((a,e) => a + +e.amount, 0))}원</span>
+        <span class="row" style="gap:6px;flex:1;min-width:260px"><input id="bk-memo" placeholder="메모 (예: 경주여행)" style="flex:1;min-width:120px"><button class="btn sm pri" id="bk-set">메모 바꾸기</button><button class="btn sm" id="bk-add">메모 뒤에 붙이기</button></span>
+        <span class="row" style="gap:6px"><select id="bk-cat"><option value="">카테고리…</option>${cats(T).map(c => `<option>${esc(c.name)}</option>`).join('')}</select>
+          <select id="bk-mem"><option value="">사람…</option>${set().members.concat([{id:'s',name:'공용'}]).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select><button class="btn sm" id="bk-apply">적용</button></span>
+        <button class="btn sm ghost" id="bk-clear">선택 해제</button><button class="btn sm ghost danger" id="bk-del">삭제</button></div></div>` : ''; })()}
+    ${mobileCards(list, {group:T==='expense', sel:true})}
     <div class="tbl pc-only"><table>
-      <tr><th>날짜</th><th>카테고리</th><th>상세</th><th>${whoLabel}</th><th>${pmLabel}</th><th class="num">금액</th><th>메모</th><th></th></tr>
-      ${list.map(e => `<tr class="m-${e.member}">
+      <tr><th style="width:28px"><input type="checkbox" id="sel-all" title="모두 선택" ${list.length && list.every(e => S.sel.has(String(e.id).split('#')[0])) ? 'checked' : ''} style="width:16px;height:16px"></th><th>날짜</th><th>카테고리</th><th>상세</th><th>${whoLabel}</th><th>${pmLabel}</th><th class="num">금액</th><th>메모</th><th></th></tr>
+      ${list.map((e, i) => `<tr class="m-${e.member}" ${S.sel.has(String(e.id).split('#')[0]) ? 'style="background:var(--accent-soft)"' : ''}>
+        <td><input type="checkbox" data-sel="${String(e.id).split('#')[0]}" data-si="${i}" ${S.sel.has(String(e.id).split('#')[0]) ? 'checked' : ''} style="width:16px;height:16px"></td>
         <td class="num" style="text-align:left">${e.date.slice(5).replace('-','.')}${e._inst?` <span class="tag" title="총 ${won(e._total)}원 ${e._inst[1]}개월 할부">할부 ${e._inst[0]}/${e._inst[1]}</span>`:e.month?' <span class="tag" title="귀속월 직접 지정">지정</span>':''}</td>
         <td>${esc(e.category)}${T==='expense'?` <span class="muted" style="font-size:11px">${esc(groupOf('expense', e.category))}</span>`:''}</td><td>${esc(e.detail)}</td>
         <td class="mem"><span>${esc(memberName(e.member))}</span></td>
@@ -591,13 +599,33 @@ function viewList(){
         <td class="num t-${e.type}">${fromSharedFund(e)?'<span class="muted" title="공동생활비에서 나간 돈 — 총지출 합계엔 미포함">(공동) </span>':isPersonal(e)?'<span class="muted" title="개인이 채워 넣을 돈 — 총지출 합계엔 미포함">(개인) </span>':''}${won(e.amount)}</td>
         <td class="muted">${esc(e.memo)}</td>
         <td style="white-space:nowrap"><button class="btn sm ghost" data-e="${e.id}">수정</button><button class="btn sm ghost" data-c="${e.id}">복사</button><button class="btn sm ghost danger" data-d="${e.id}">삭제</button></td></tr>`).join('')
-        || `<tr><td colspan="8" class="empty">${TYPES[T]} 내역이 없어요</td></tr>`}
+        || `<tr><td colspan="9" class="empty">${TYPES[T]} 내역이 없어요</td></tr>`}
     </table></div>`;
   bindMonth();
   if (editing) bindEntryForm(editing);
   if ($('#add')) $('#add').onclick = () => { S.type = T; S.edit = 'new'; render(); };
   bindCardOpen();
-  document.querySelectorAll('[data-tt]').forEach(b => b.onclick = () => { F.type = b.dataset.tt; F.cat = 'all'; F.grp = 'all'; render(); });
+  document.querySelectorAll('[data-tt]').forEach(b => b.onclick = () => { F.type = b.dataset.tt; F.cat = 'all'; F.grp = 'all'; S.sel.clear(); render(); });
+  // 여러 건 선택 → 메모·카테고리·사람 한 번에 바꾸기 (Shift 누르고 클릭하면 사이를 한꺼번에 선택)
+  const rowIds = list.map(e => String(e.id).split('#')[0]);
+  document.querySelectorAll('[data-sel]').forEach(c => c.onclick = ev => { ev.stopPropagation();
+    const id = c.dataset.sel, i = c.dataset.si != null ? +c.dataset.si : null;
+    if (ev.shiftKey && i != null && S._lastSel != null) { const [a, b] = [Math.min(i, S._lastSel), Math.max(i, S._lastSel)]; rowIds.slice(a, b + 1).forEach(x => c.checked ? S.sel.add(x) : S.sel.delete(x)); }
+    else c.checked ? S.sel.add(id) : S.sel.delete(id);
+    if (i != null) S._lastSel = i; const y = window.scrollY; render(); window.scrollTo(0, y); });
+  if ($('#sel-all')) $('#sel-all').onclick = ev => { rowIds.forEach(x => ev.target.checked ? S.sel.add(x) : S.sel.delete(x)); render(); };
+  const picked = () => [...S.sel].map(id => S.data.entries.find(x => x.id === id)).filter(Boolean);
+  const bulk = (fn, msg) => { const l = picked(); if (!l.length) return; ops(l.map(e => ({op:'upsert', col:'entries', item:fn({...e})})), msg(l.length)); S.sel.clear(); };
+  if ($('#bulk')) {
+    $('#bk-set').onclick = () => { const m = $('#bk-memo').value.trim(); bulk(e => ({...e, memo:m}), n => m ? `${n}건 메모를 '${m}'(으)로 바꿨어요` : `${n}건 메모를 지웠어요`); };
+    $('#bk-add').onclick = () => { const m = $('#bk-memo').value.trim(); if (!m) return toast('붙일 메모를 적어주세요');
+      bulk(e => ({...e, memo: e.memo ? (e.memo.includes(m) ? e.memo : `${e.memo} · ${m}`) : m}), n => `${n}건 메모에 '${m}'을(를) 붙였어요`); };
+    $('#bk-memo').onkeydown = ev => { if (ev.key === 'Enter') $('#bk-set').click(); };
+    $('#bk-apply').onclick = () => { const c = $('#bk-cat').value, m = $('#bk-mem').value; if (!c && !m) return toast('바꿀 카테고리나 사람을 골라주세요');
+      bulk(e => ({...e, ...(c ? {category:c} : {}), ...(m ? {member:m} : {}), settled:false}), n => `${n}건을 바꿨어요`); };
+    $('#bk-clear').onclick = () => { S.sel.clear(); render(); };
+    $('#bk-del').onclick = () => { const l = picked(); if (confirm(`선택한 ${l.length}건(합계 ${won(l.reduce((a,e) => a + +e.amount, 0))}원)을 삭제할까요?`)) { ops(l.map(e => ({op:'delete', col:'entries', item:{id:e.id}})), `${l.length}건을 삭제했어요`); S.sel.clear(); } };
+  }
   document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { F.grp = b.dataset.g; F.cat = 'all'; render(); });
   $('#fm').onchange = ev => { F.member = ev.target.value; render(); };
   $('#fc').onchange = ev => { F.cat = ev.target.value; render(); };
