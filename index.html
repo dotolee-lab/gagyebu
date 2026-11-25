@@ -1359,12 +1359,12 @@ function salaryGrid(who, y, rec, ed){
   const numIn = (attr, v, w = 92) => `<input ${attr} inputmode="numeric" value="${v ? won(v) : ''}" style="width:${w}px;text-align:right;padding:4px 6px;font-size:13px">`;
   return `<div class="tbl" style="max-height:none"><table class="sgrid" style="min-width:1500px;font-size:13px">
     <tr><th>분류</th><th>항목</th><th class="num">지급액</th><th>지급방법</th>${M.map(i => `<th class="num">${i+1}월${ed ? `<br><input data-mn="${i+1}" value="${esc((d.monthNotes||{})[i+1]||'')}" placeholder="메모" style="width:80px;font-size:11px;padding:2px 4px">` : (d.monthNotes||{})[i+1] ? `<div class="muted" style="font-size:11px;font-weight:400">(${esc(d.monthNotes[i+1])})</div>` : ''}</th>`).join('')}<th class="num">합계</th>${ed ? '<th></th>' : ''}</tr>
-    ${d.items.map((it, r) => `<tr>${ed ? `<td><input data-g="${r}" value="${esc(it.group)}" style="width:90px;font-size:13px;padding:4px 6px"></td>` : span[r] ? `<td rowspan="${span[r]}" style="background:var(--s);font-weight:600;text-align:center">${esc(it.group)}</td>` : ''}
+    ${d.items.map((it, r) => `<tr ${ed ? `data-drow="${r}"` : ''}>${ed ? `<td class="nw"><span data-dh="${r}" draggable="true" title="끌어서 옮기기" style="cursor:grab;padding:0 6px 0 0;color:var(--muted);user-select:none">⠿</span><input data-g="${r}" value="${esc(it.group)}" style="width:90px;font-size:13px;padding:4px 6px"></td>` : span[r] ? `<td rowspan="${span[r]}" style="background:var(--s);font-weight:600;text-align:center">${esc(it.group)}</td>` : ''}
       <td>${ed ? `<input data-n="${r}" value="${esc(it.name)}" style="width:150px;font-size:13px;padding:4px 6px"><br><input data-nt="${r}" value="${esc(it.note||'')}" placeholder="설명" style="width:150px;font-size:11px;padding:2px 6px;margin-top:2px">` : `${esc(it.name)}${it.note ? `<div class="muted" style="font-size:11px">(${esc(it.note)})</div>` : ''}`}</td>
       <td class="num">${ed ? numIn(`data-b="${r}"`, it.base) : it.base ? won(it.base) : '-'}</td>
       <td>${ed ? `<select data-me="${r}" style="font-size:13px;padding:4px">${PAY_METHODS.map(x => `<option ${x===it.method?'selected':''}>${x}</option>`).join('')}</select>` : esc(it.method)}</td>
       ${M.map(i => `<td class="num">${ed ? numIn(`data-c="${r}|${i}"`, it.m[i]) : +it.m[i] ? won(it.m[i]) : '<span class="muted">-</span>'}</td>`).join('')}
-      <td class="num"><b>${won(it.m.reduce((a,v) => a + (+v||0), 0))}</b></td>${ed ? `<td><button type="button" class="btn sm ghost danger" data-rx="${r}">×</button></td>` : ''}</tr>`).join('')}
+      <td class="num"><b>${won(it.m.reduce((a,v) => a + (+v||0), 0))}</b></td>${ed ? `<td class="nw"><button type="button" class="btn sm ghost" data-rmv="${r}|-1" title="위로" ${r ? '' : 'disabled'}>▲</button><button type="button" class="btn sm ghost" data-rmv="${r}|1" title="아래로" ${r < d.items.length - 1 ? '' : 'disabled'}>▼</button><button type="button" class="btn sm ghost" data-rins="${r}" title="바로 아래에 새 항목">+</button><button type="button" class="btn sm ghost danger" data-rx="${r}">×</button></td>` : ''}</tr>`).join('')}
     <tr style="border-top:2px solid var(--ink)"><td colspan="${ed ? 4 : 4}"><b>합계</b></td>${M.map(i => `<td class="num"><b>${won(detMonth(d, i))}</b></td>`).join('')}<td class="num"><b>${won(detTotal(d))}</b></td>${ed ? '<td></td>' : ''}</tr>
     ${ed ? '' : `<tr><td colspan="4" class="muted">가계부에 입력한 수입 (참고)</td>${M.map(i => `<td class="num muted">${inc[i] ? won(inc[i]) : '-'}</td>`).join('')}<td class="num muted">${won(inc.reduce((a,b)=>a+b,0))}</td></tr>`}
   </table></div>`;
@@ -1479,6 +1479,19 @@ function viewSalary(){
     document.querySelectorAll('[data-me]').forEach(i => i.onchange = () => { const r = +i.dataset.me; readGrid();
       const it = se.d.items[r]; if (it.method === '매월' && it.base && it.m.every(v => !v)) it.m = Array(12).fill(it.base); render(); });
     document.querySelectorAll('[data-rx]').forEach(b => b.onclick = () => { readGrid(); se.d.items.splice(+b.dataset.rx, 1); render(); });
+    // 항목 순서 바꾸기: ▲▼ 버튼, 또는 ⠿ 를 잡고 끌어서 원하는 줄에 놓기
+    const moveItem = (from, to) => { const it = se.d.items; if (to < 0 || to >= it.length || from === to) return; const [x] = it.splice(from, 1); it.splice(to, 0, x); render(); };
+    document.querySelectorAll('[data-rmv]').forEach(b => b.onclick = () => { readGrid(); const [r, dir] = b.dataset.rmv.split('|').map(Number); moveItem(r, r + dir); });
+    document.querySelectorAll('[data-rins]').forEach(b => b.onclick = () => { readGrid(); const r = +b.dataset.rins, cur = se.d.items[r];
+      se.d.items.splice(r + 1, 0, {id:uid(), group: cur ? cur.group : '수당', name:'', base:0, method:'매월', m:Array(12).fill('')}); render(); });
+    document.querySelectorAll('[data-dh]').forEach(h => h.ondragstart = ev => { S._drag = +h.dataset.dh; ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', h.dataset.dh); });
+    document.querySelectorAll('[data-drow]').forEach(tr => {
+      tr.ondragover = ev => { if (S._drag == null) return; ev.preventDefault(); const up = ev.offsetY < tr.offsetHeight / 2;
+        tr.style.boxShadow = up ? 'inset 0 3px 0 var(--accent)' : 'inset 0 -3px 0 var(--accent)'; tr._up = up; };
+      tr.ondragleave = () => { tr.style.boxShadow = ''; };
+      tr.ondrop = ev => { ev.preventDefault(); tr.style.boxShadow = ''; const from = S._drag; S._drag = null; if (from == null) return;
+        let to = +tr.dataset.drow + (tr._up ? 0 : 1); if (from < to) to--; readGrid(); moveItem(from, to); }; });
+    document.addEventListener('dragend', () => { S._drag = null; document.querySelectorAll('[data-drow]').forEach(t => t.style.boxShadow = ''); }, {once:true});
     document.querySelectorAll('[data-gadd]').forEach(b => b.onclick = () => { readGrid(); const last = se.d.items[se.d.items.length - 1];
       se.d.items.push({id:uid(), group: last ? last.group : '수당', name:'', base:0, method:'매월', m:Array(12).fill('')}); render(); });
     document.querySelectorAll('[data-gcancel]').forEach(b => b.onclick = () => { S.salEdit = null; render(); });
