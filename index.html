@@ -901,10 +901,10 @@ function viewShared(){
       ${pending.length ? `<div class="row" style="margin-bottom:10px">${Object.entries(pendBy).map(([m,v]) => `<span class="tag ${m}">${esc(memberName(m))} ${won(v)}원</span>`).join('')}</div>
       <div class="mlist">${pending.map(e => `<div class="mcard m-${e.member}" style="cursor:default">
         <div class="mrow"><span class="mt">${esc(e.detail)}</span><span class="mamt">${won(e.amount)}</span></div>
-        <div class="msub"><span>${e.date.slice(5).replace('-','.')}</span><span class="tag ${e.member}">${esc(memberName(e.member))}</span><span>${esc(e.category)}</span></div>
+        <div class="msub"><span>${e.date.slice(5).replace('-','.')}</span><span class="tag ${e.member}">${esc(memberName(e.member))}</span><span>${esc(e.category)}</span>${e.payMethod ? `<span>💳 ${esc(e.payMethod)}</span>` : ''}</div>
         <div class="mact"><button class="btn" data-s="${e.id}">정산 완료</button></div></div>`).join('')}</div>
       <table class="pc-only">${pending.map(e => `<tr><td class="num" style="text-align:left">${e.date}</td><td><span class="tag ${e.member}">${esc(memberName(e.member))}</span></td>
-        <td>${esc(e.detail)}</td><td class="num">${won(e.amount)}</td><td><button class="btn sm" data-s="${e.id}">정산 완료</button></td></tr>`).join('')}</table>
+        <td>${esc(e.detail)}${e.memo ? ` <span class="muted">${esc(e.memo)}</span>` : ''}</td><td class="nw">${e.payMethod ? `<span class="tag">💳 ${esc(e.payMethod)}</span>` : '<span class="muted">-</span>'}</td><td class="muted nw">${esc(e.category)}</td><td class="num">${won(e.amount)}</td><td><button class="btn sm" data-s="${e.id}">정산 완료</button></td></tr>`).join('')}</table>
       <div style="margin-top:10px">${Object.keys(pendBy).map(m => `<button class="btn sm" data-sa="${m}">${esc(memberName(m))} 전부 정산 완료</button> `).join('')}</div>`
       : '<div class="muted">보낼 돈이 없어요</div>'}
       <h3 style="font-size:14px;margin:18px 0 8px">📥 받을 돈 <small class="muted" style="font-weight:400">개인 카드로 낸 집안 지출 — 생활비통장에서 그 사람에게 돌려주기</small></h3>
