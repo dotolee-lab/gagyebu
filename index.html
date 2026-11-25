@@ -877,6 +877,13 @@ function viewCard(){
 }
 
 // ===== 공동생활비 =====
+// 정산 대기 목록 체크박스 (k: 'p' 보낼 돈, 'r' 받을 돈)
+const stlBox = (e, k, i) => `<input type="checkbox" data-st="${k}|${i}" ${S.stl && S.stl.has(e.id) ? 'checked' : ''} style="width:16px;height:16px;vertical-align:-3px;margin-right:6px">`;
+const stlAll = (l, k) => `<input type="checkbox" data-stall="${k}" title="모두 선택" ${l.length && l.every(e => S.stl.has(e.id)) ? 'checked' : ''} style="width:16px;height:16px">`;
+function stlBar(l, k){ const sel = l.filter(e => S.stl.has(e.id)); if (!sel.length) return '';
+  return `<div class="panel" style="position:sticky;top:96px;z-index:4;border-color:var(--accent);padding:10px 14px;margin-bottom:10px"><div class="row" style="gap:8px">
+    <b>${sel.length}건 선택</b><span class="muted">합계 ${won(sel.reduce((a,e) => a + +e.amount, 0))}원</span>
+    <button class="btn sm pri" data-stgo="${k}">${k === 'r' ? '선택한 건 받음' : '선택한 건 정산 완료'}</button><button class="btn sm ghost" data-stclr="${k}">선택 해제</button></div></div>`; }
 function viewShared(){
   const list = entriesOf(S.month).filter(fromSharedFund).sort((a,b)=>a.date.localeCompare(b.date));
   const sharedIn = entriesOf(S.month).filter(e => e.type==='expense' && e.category==='공동생활비').reduce((a,e)=>a + +e.amount,0);
@@ -898,22 +905,23 @@ function viewShared(){
       ${(() => { const nets = set().members.map(m => [m, (recvBy[m.id]||0) - (pendBy[m.id]||0)]).filter(([,v]) => v);
         return nets.length ? `<div class="row" style="margin-bottom:12px">${nets.map(([m,v]) => `<span class="tag ${m.id}" style="font-size:13px;padding:3px 10px">${esc(m.name)} ${v > 0 ? `<b>${won(v)}원 받기</b>` : `<b>${won(-v)}원 보내기</b>`}</span>`).join('')}<span class="muted">받을 돈과 보낼 돈을 합친 금액이에요</span></div>` : ''; })()}
       <h3 style="font-size:14px;margin:6px 0 8px">📤 보낼 돈 <small class="muted" style="font-weight:400">개인(정산) 카테고리 · 공동생활비 카드로 결제한 개인 몫 — 각자 용돈에서 생활비카드 출금통장으로</small></h3>
-      ${pending.length ? `<div class="row" style="margin-bottom:10px">${Object.entries(pendBy).map(([m,v]) => `<span class="tag ${m}">${esc(memberName(m))} ${won(v)}원</span>`).join('')}</div>
-      <div class="mlist">${pending.map(e => `<div class="mcard m-${e.member}" style="cursor:default">
-        <div class="mrow"><span class="mt">${esc(e.detail)}</span><span class="mamt">${won(e.amount)}</span></div>
+      ${(() => { S.stl = S.stl || new Set(); const live = new Set(pending.concat(recv).map(e => e.id)); [...S.stl].forEach(id => { if (!live.has(id)) S.stl.delete(id); }); return ''; })()}
+      ${pending.length ? `${stlBar(pending, 'p')}<div class="row" style="margin-bottom:10px">${Object.entries(pendBy).map(([m,v]) => `<span class="tag ${m}">${esc(memberName(m))} ${won(v)}원</span>`).join('')}</div>
+      <div class="mlist">${pending.map((e, i) => `<div class="mcard m-${e.member}" style="cursor:default">
+        <div class="mrow"><span class="mt">${stlBox(e, 'p', i)}${esc(e.detail)}</span><span class="mamt">${won(e.amount)}</span></div>
         <div class="msub"><span>${e.date.slice(5).replace('-','.')}</span><span class="tag ${e.member}">${esc(memberName(e.member))}</span><span>${esc(e.category)}</span>${e.payMethod ? `<span>💳 ${esc(e.payMethod)}</span>` : ''}</div>
         <div class="mact"><button class="btn" data-s="${e.id}">정산 완료</button></div></div>`).join('')}</div>
-      <table class="pc-only">${pending.map(e => `<tr><td class="num" style="text-align:left">${e.date}</td><td><span class="tag ${e.member}">${esc(memberName(e.member))}</span></td>
+      <table class="pc-only"><tr><th style="width:28px">${stlAll(pending, 'p')}</th><th>날짜</th><th>사람</th><th>가맹점</th><th>결제</th><th>카테고리</th><th class="num">금액</th><th></th></tr>${pending.map((e, i) => `<tr ${S.stl.has(e.id) ? 'style="background:var(--accent-soft)"' : ''}><td>${stlBox(e, 'p', i)}</td><td class="num" style="text-align:left">${e.date}</td><td><span class="tag ${e.member}">${esc(memberName(e.member))}</span></td>
         <td>${esc(e.detail)}${e.memo ? ` <span class="muted">${esc(e.memo)}</span>` : ''}</td><td class="nw">${e.payMethod ? `<span class="tag">💳 ${esc(e.payMethod)}</span>` : '<span class="muted">-</span>'}</td><td class="muted nw">${esc(e.category)}</td><td class="num">${won(e.amount)}</td><td><button class="btn sm" data-s="${e.id}">정산 완료</button></td></tr>`).join('')}</table>
       <div style="margin-top:10px">${Object.keys(pendBy).map(m => `<button class="btn sm" data-sa="${m}">${esc(memberName(m))} 전부 정산 완료</button> `).join('')}</div>`
       : '<div class="muted">보낼 돈이 없어요</div>'}
       <h3 style="font-size:14px;margin:18px 0 8px">📥 받을 돈 <small class="muted" style="font-weight:400">개인 카드로 낸 집안 지출 — 생활비통장에서 그 사람에게 돌려주기</small></h3>
-      ${recv.length ? `<div class="row" style="margin-bottom:10px">${Object.entries(recvBy).map(([m,v]) => `<span class="tag ${m}">${esc(memberName(m))} ${won(v)}원</span>`).join('')}</div>
-      <div class="mlist">${recv.map(e => `<div class="mcard m-${reimbWho(e)}" style="cursor:default">
-        <div class="mrow"><span class="mt">${esc(e.detail || e.category)}</span><span class="mamt">${won(e.amount)}</span></div>
+      ${recv.length ? `${stlBar(recv, 'r')}<div class="row" style="margin-bottom:10px">${Object.entries(recvBy).map(([m,v]) => `<span class="tag ${m}">${esc(memberName(m))} ${won(v)}원</span>`).join('')}</div>
+      <div class="mlist">${recv.map((e, i) => `<div class="mcard m-${reimbWho(e)}" style="cursor:default">
+        <div class="mrow"><span class="mt">${stlBox(e, 'r', i)}${esc(e.detail || e.category)}</span><span class="mamt">${won(e.amount)}</span></div>
         <div class="msub"><span>${e.date.slice(5).replace('-','.')}</span><span class="tag ${reimbWho(e)}">${esc(memberName(reimbWho(e)))}에게</span><span>${esc(e.category)}</span><span>${esc(e.payMethod)}</span></div>
         <div class="mact"><button class="btn" data-s="${e.id}">받음</button></div></div>`).join('')}</div>
-      <table class="pc-only">${recv.map(e => `<tr><td class="num" style="text-align:left">${e.date}</td><td><span class="tag ${reimbWho(e)}">${esc(memberName(reimbWho(e)))}에게</span></td>
+      <table class="pc-only"><tr><th style="width:28px">${stlAll(recv, 'r')}</th><th>날짜</th><th>누구에게</th><th>내용</th><th class="num">금액</th><th></th></tr>${recv.map((e, i) => `<tr ${S.stl.has(e.id) ? 'style="background:var(--accent-soft)"' : ''}><td>${stlBox(e, 'r', i)}</td><td class="num" style="text-align:left">${e.date}</td><td><span class="tag ${reimbWho(e)}">${esc(memberName(reimbWho(e)))}에게</span></td>
         <td>${esc(e.detail)} <span class="muted">${esc(e.category)} · ${esc(e.payMethod)}</span></td><td class="num">${won(e.amount)}</td><td><button class="btn sm" data-s="${e.id}">받음</button></td></tr>`).join('')}</table>
       <div style="margin-top:10px">${Object.keys(recvBy).map(m => `<button class="btn sm" data-ra="${m}">${esc(memberName(m))} 전부 받음</button> `).join('')}</div>`
       : '<div class="muted">받을 돈이 없어요</div>'}
@@ -948,6 +956,17 @@ function viewShared(){
     S.edit = {...newEntry('expense'), category:'공동생활비', detail:'공동생활비', amount:400000}; render(); };
   document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { const e = S.data.entries.find(x=>x.id===b.dataset.s);
     ops([{op:'upsert', col:'entries', item:{...e, settled:true}}], isReimb(e) ? '받음으로 표시했어요' : '정산 완료로 표시했어요'); });
+  // 여러 건 골라서 한 번에 정산 완료 / 받음 (Shift+클릭으로 사이 구간 선택)
+  const stlLists = {p: pending, r: recv};
+  document.querySelectorAll('[data-st]').forEach(c => c.onclick = ev => { const [k, i] = c.dataset.st.split('|'); const l = stlLists[k], id = l[+i].id;
+    if (ev.shiftKey && S._stLast && S._stLast[0] === k) { const [a, b] = [Math.min(+i, S._stLast[1]), Math.max(+i, S._stLast[1])]; l.slice(a, b + 1).forEach(e => c.checked ? S.stl.add(e.id) : S.stl.delete(e.id)); }
+    else c.checked ? S.stl.add(id) : S.stl.delete(id);
+    S._stLast = [k, +i]; render(); });
+  document.querySelectorAll('[data-stall]').forEach(c => c.onclick = () => { stlLists[c.dataset.stall].forEach(e => c.checked ? S.stl.add(e.id) : S.stl.delete(e.id)); render(); });
+  document.querySelectorAll('[data-stclr]').forEach(b => b.onclick = () => { stlLists[b.dataset.stclr].forEach(e => S.stl.delete(e.id)); render(); });
+  document.querySelectorAll('[data-stgo]').forEach(b => b.onclick = () => { const k = b.dataset.stgo, l = stlLists[k].filter(e => S.stl.has(e.id)); if (!l.length) return;
+    l.forEach(e => S.stl.delete(e.id));
+    ops(l.map(e => ({op:'upsert', col:'entries', item:{...e, settled:true}})), `${l.length}건(${won(l.reduce((a,e) => a + +e.amount, 0))}원)을 ${k === 'r' ? '받음으로' : '정산 완료로'} 표시했어요`); });
   document.querySelectorAll('[data-sa]').forEach(b => b.onclick = () => {
     const l = pending.filter(e => e.member === b.dataset.sa);
     if (confirm(`${l.length}건을 정산 완료로 표시할까요?`)) ops(l.map(e => ({op:'upsert', col:'entries', item:{...e, settled:true}})), '정산 완료'); });
