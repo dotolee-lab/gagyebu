@@ -443,9 +443,10 @@ function viewDash(){
             <td class="num">${won(v.income)}</td><td class="num">${won(v.expense)}</td></tr>`).join('')}</table></div>
         <div class="panel"><h2>공동생활비</h2>
           <div class="kv"><span>이번 달 넣은 돈</span><b class="num">${won(sharedIn)}</b></div>
+          ${carryOf(S.month) ? `<div class="kv"><span>지난달 이월</span><b class="num">${carryOf(S.month) > 0 ? '+' : '−'}${won(Math.abs(carryOf(S.month)))}</b></div>` : ''}
           <div class="kv"><span>공동생활비로 쓴 돈</span><b class="num">${won(t.sharedUse)}</b></div>
-          <div class="bar ${t.sharedUse>sharedIn&&sharedIn?'over':''}" style="margin:6px 0"><i style="width:${sharedIn?Math.min(100,t.sharedUse/sharedIn*100):0}%"></i></div>
-          <div class="muted">남은 금액 ${won(sharedIn - t.sharedUse)}원 · 정산 대기 ${S.data.entries.filter(e => needsSettle(e) || needsReimb(e)).length}건</div></div>
+          ${(() => { const pool = sharedIn + carryOf(S.month); return `<div class="bar ${t.sharedUse>pool&&pool?'over':''}" style="margin:6px 0"><i style="width:${pool>0?Math.min(100,t.sharedUse/pool*100):0}%"></i></div>`; })()}
+          <div class="muted">남은 금액 ${won(sharedIn + carryOf(S.month) - t.sharedUse)}원 · 정산 대기 ${S.data.entries.filter(e => needsSettle(e) || needsReimb(e)).length}건</div></div>
       </div>
     </div>`;
   bindMonth();
@@ -877,6 +878,10 @@ function viewCard(){
 }
 
 // ===== 공동생활비 =====
+// 이월: 지난달 공동생활비가 모자라거나 남은 걸 이번 달로 넘기는 금액 (직접 넣을 때만, settings.sharedCarry['YYYY-MM'])
+const carryOf = m => +((set().sharedCarry || {})[m]) || 0;
+const sharedInOf = m => entriesOf(m).filter(e => e.type==='expense' && e.category==='공동생활비').reduce((a,e) => a + +e.amount, 0);
+const sharedLeftOf = m => sharedInOf(m) + carryOf(m) - entriesOf(m).filter(fromSharedFund).reduce((a,e) => a + +e.amount, 0);
 // 정산 대기 목록 체크박스 (k: 'p' 보낼 돈, 'r' 받을 돈)
 const stlBox = (e, k, i) => `<input type="checkbox" data-st="${k}|${i}" ${S.stl && S.stl.has(e.id) ? 'checked' : ''} style="width:16px;height:16px;vertical-align:-3px;margin-right:6px">`;
 const stlAll = (l, k) => `<input type="checkbox" data-stall="${k}" title="모두 선택" ${l.length && l.every(e => S.stl.has(e.id)) ? 'checked' : ''} style="width:16px;height:16px">`;
@@ -888,6 +893,8 @@ function viewShared(){
   const list = entriesOf(S.month).filter(fromSharedFund).sort((a,b)=>a.date.localeCompare(b.date));
   const sharedIn = entriesOf(S.month).filter(e => e.type==='expense' && e.category==='공동생활비').reduce((a,e)=>a + +e.amount,0);
   const used = list.reduce((a,e)=>a + +e.amount, 0);
+  const carry = carryOf(S.month), prevM = shiftMonth(S.month, -1), nextM = shiftMonth(S.month, 1), prevLeft = sharedLeftOf(prevM), pool = sharedIn + carry, left = pool - used;
+  const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '') + won(Math.abs(v));
   const pending = S.data.entries.filter(needsSettle).sort((a,b)=>a.date.localeCompare(b.date));
   const pendBy = {}; pending.forEach(e => pendBy[e.member] = (pendBy[e.member]||0) + +e.amount);
   const recv = S.data.entries.filter(needsReimb).sort((a,b)=>a.date.localeCompare(b.date));
@@ -897,9 +904,13 @@ function viewShared(){
     <div class="row" style="justify-content:space-between;margin-bottom:14px">${monthPicker()}</div>
     <div class="grid kpis" style="margin-bottom:16px">
       <div class="kpi"><div class="l">넣은 돈 (공동생활비)</div><div class="v">${won(sharedIn)}</div>
-        ${sharedIn ? '' : '<div class="s"><button class="btn sm" id="sh-in">+ 넣은 돈 입력</button></div>'}</div>
+        ${carry ? `<div class="s">지난달 이월 <b style="color:${carry < 0 ? 'var(--danger)' : 'inherit'}">${sgn(carry)}</b> → 쓸 수 있는 돈 <b>${won(pool)}</b></div>` : ''}
+        ${S.carryEdit ? `<div class="s row" style="gap:6px;margin-top:6px"><input id="cy-v" inputmode="numeric" value="${carry ? sgn(carry).replace('−','-') : (prevLeft ? sgn(prevLeft).replace('−','-') : '')}" placeholder="예: -255,340" style="width:130px">
+            <button class="btn sm pri" id="cy-save">저장</button>${carry ? '<button class="btn sm ghost danger" id="cy-del">이월 지우기</button>' : ''}<button class="btn sm ghost" id="cy-x">취소</button>
+            <div class="muted" style="width:100%;font-size:12px">${monthLabel(prevM)} 남은 돈 ${sgn(prevLeft)}원 · 모자라서 당겨 쓴 건 −(마이너스), 남은 건 +로</div></div>`
+          : `<div class="s">${sharedIn ? '' : '<button class="btn sm" id="sh-in">+ 넣은 돈 입력</button> '}<button class="btn sm ghost" id="cy-open">${carry ? '✏️ 이월 고치기' : `↪ 지난달 이월 넣기${prevLeft ? ` (${sgn(prevLeft)})` : ''}`}</button></div>`}</div>
       <div class="kpi"><div class="l">공동생활비로 쓴 돈</div><div class="v t-expense">${won(used)}</div><div class="s">${list.length}건</div></div>
-      <div class="kpi"><div class="l">남은 돈</div><div class="v" style="${sharedIn-used<0?'color:var(--danger)':''}">${won(sharedIn-used)}</div><div class="s">${sharedIn?Math.round(used/sharedIn*100)+'% 사용':''}</div></div>
+      <div class="kpi"><div class="l">남은 돈${carry ? ' <span class="muted">(이월 포함)</span>' : ''}</div><div class="v" style="${left<0?'color:var(--danger)':''}">${won(left)}</div><div class="s">${pool>0?Math.round(used/pool*100)+'% 사용':''}${carryOf(nextM) ? ` · ${monthLabel(nextM)}로 ${sgn(carryOf(nextM))}원 이월함` : ''}</div></div>
     </div>
     <div class="panel"><h2>정산 대기</h2>
       ${(() => { const nets = set().members.map(m => [m, (recvBy[m.id]||0) - (pendBy[m.id]||0)]).filter(([,v]) => v);
@@ -952,6 +963,15 @@ function viewShared(){
   document.querySelectorAll('[data-xe]').forEach(b => b.onclick = () => { S.returnTo = 'shared'; S.view = 'list'; S.edit = {...byId(b.dataset.xe)}; render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-xd]').forEach(b => b.onclick = () => { const e = byId(b.dataset.xd);
     if (confirm(`${e.date} ${e.detail} ${won(e.amount)}원을 삭제할까요?`)) ops([{op:'delete', col:'entries', item:{id:e.id}}], '삭제했어요'); });
+  if ($('#cy-open')) $('#cy-open').onclick = () => { S.carryEdit = true; render(); setTimeout(() => { const i = $('#cy-v'); if (i) { i.focus(); i.select(); } }); };
+  if ($('#cy-x')) $('#cy-x').onclick = () => { S.carryEdit = false; render(); };
+  const saveCarry = v => { const sc = set().sharedCarry = set().sharedCarry || {}; if (v) sc[S.month] = v; else delete sc[S.month]; S.carryEdit = false;
+    saveSettings(v ? `${monthLabel(S.month)}에 지난달 이월 ${sgn(v)}원을 넣었어요` : '이월을 지웠어요'); };
+  if ($('#cy-save')) { const i = $('#cy-v');
+    i.oninput = () => { const neg = /^\s*[-−]/.test(i.value), n = +i.value.replace(/[^\d]/g, ''); i.value = n ? (neg ? '-' : '') + n.toLocaleString('ko-KR') : (neg ? '-' : ''); };
+    i.onkeydown = ev => { if (ev.key === 'Enter') $('#cy-save').click(); };
+    $('#cy-save').onclick = () => { const n = +i.value.replace(/[^\d]/g, '') || 0; saveCarry(/^\s*[-−]/.test(i.value) ? -n : n); }; }
+  if ($('#cy-del')) $('#cy-del').onclick = () => saveCarry(0);
   if ($('#sh-in')) $('#sh-in').onclick = () => { S.returnTo = 'shared'; S.view = 'list';
     S.edit = {...newEntry('expense'), category:'공동생활비', detail:'공동생활비', amount:400000}; render(); };
   document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { const e = S.data.entries.find(x=>x.id===b.dataset.s);
