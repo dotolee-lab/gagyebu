@@ -1769,7 +1769,7 @@ function importCardRows(rows){
   const guessPm = k => { const saved = (set().cardMap || {})[k]; if (saved && set().payMethods.some(p => p.name === saved)) return saved;
     const kk = kwNorm(k); const hit = set().payMethods.find(p => pmBase(p.name) && (kk.includes(pmBase(p.name)) || pmBase(p.name).includes(kk))); return hit ? hit.name : '__new:' + k; };
   const cardMapNow = {}; let canceled = 0; const cancels = [];
-  // 서울페이 같은 지역화폐 앱 내역(결제채널 열이 있는 파일)은 전부 공용 「생활비」로
+  // 서울페이 같은 지역화폐 앱 내역(결제채널 열이 있는 파일)은 공용 「생활비」로 — 단, 직접 만든 자동 분류 규칙이 있으면 규칙이 먼저
   const payApp = h.some(c => /결제채널/.test(c));
   const payAppCat = cats('expense').some(c => c.name === '생활비') ? '생활비' : null;
   const whoMap = {'공용':'s'}; set().members.forEach(m => whoMap[m.name] = m.id);
@@ -1787,8 +1787,9 @@ function importCardRows(rows){
     const detail = cM >= 0 ? r[cM] : '';
     const catRaw = cCat >= 0 ? (r[cCat]||'').replace(/^\d+월\s*/,'') : '';
     const auto = classify(detail, rowPm.startsWith('__new:') ? '' : rowPm);
-    const category = cats('expense').some(c => c.name === catRaw) ? catRaw : payApp && payAppCat ? payAppCat : auto.category;
-    const member = whoMap[r[cWho]] || (payApp && payAppCat ? 's' : auto.member);
+    const forcePay = payApp && payAppCat && auto.how !== 'rule';
+    const category = cats('expense').some(c => c.name === catRaw) ? catRaw : forcePay ? payAppCat : auto.category;
+    const member = whoMap[r[cWho]] || (forcePay ? 's' : auto.member);
     // 같은 날짜·금액·가맹점이 이미 있으면 건너뜀 (중복 업로드 방지)
     if (S.data.entries.some(e => e.date===date && +e.amount===amt && e.detail===detail)) { skipped.push(r); continue; }
     const vou = cVou >= 0 ? Math.min(amt, +(String(r[cVou]||'').replace(/[^\d]/g,'')) || 0) : 0;
