@@ -1575,7 +1575,7 @@ function viewSet(){
         <label class="btn">백업 복원<input type="file" id="imp-json" accept=".json" hidden></label>
         <label class="btn">내역 파일 추가 (기존 유지)<input type="file" id="imp-merge" accept=".json" hidden></label></div>
       <div id="merge-prev"></div>
-      <p class="muted" style="margin:0 0 6px">카드사 이용내역 가져오기 — 카드사에서 받은 <b>엑셀(xls·xlsx) 또는 CSV</b> 파일을 그대로 올리세요. <b>이용일자·가맹점·이용금액</b> 열을 자동으로 찾아요. (구분·세부내용·내용 열이 있으면 사람·메모·카테고리로 들어가요) <b>파일만 넣으면 돼요</b> — 롯데카드처럼 여러 카드가 섞여 있으면 「이용카드」 열로 알아서 나누고, 취소된 결제는 빼요. 카드 이름이 없는 파일이면 미리보기에서 어느 카드인지 한 번만 골라주세요.</p>
+      <p class="muted" style="margin:0 0 6px">카드사 이용내역 가져오기 — 카드사에서 받은 <b>엑셀(xls·xlsx) 또는 CSV</b> 파일을 그대로 올리세요. <b>이용일자·가맹점·이용금액</b> 열을 자동으로 찾아요. (구분·세부내용·내용 열이 있으면 사람·메모·카테고리로 들어가요) <b>파일만 넣으면 돼요</b> — 롯데카드처럼 여러 카드가 섞여 있으면 「이용카드」 열로 알아서 나누고, 취소된 결제는 빼요. 카드 이름이 없는 파일이면 미리보기에서 어느 카드인지 한 번만 골라주세요. <b>서울페이</b> 「결제내역」 엑셀도 그대로 넣으면 결제수단 「서울페이」·공용 「생활비」로 들어가요 (취소 건은 빼요).</p>
       <div class="row"><label class="btn pri">카드 내역 파일 선택<input type="file" id="imp-csv" accept=".xls,.xlsx,.csv,text/csv" hidden></label></div>
       <div id="imp-prev"></div></div>`;
   $('#s-save').onclick = () => { st.title = $('#s-title').value.trim() || '가계부';
@@ -1678,17 +1678,17 @@ async function readRows(file){
   if (/<frameset/i.test(head) && /WorksheetSource/i.test(head) && !/<td/i.test(head.replace(/"[^"]*<td[^"]*"/g, '')))
     throw new Error('이 파일은 엑셀에서 「웹 페이지」로 다시 저장된 껍데기 파일이라 안에 내역이 없어요. 카드사에서 받은 원본 파일을 그대로 올리거나, 엑셀에서 「다른 이름으로 저장 → Excel 통합 문서(*.xlsx)」로 저장해서 올려주세요');
   const wb = XLSX.read(buf, {type:'array', cellDates:true});
-  let best = [];
-  for (const name of wb.SheetNames) {   // 이용일·금액 머리글이 있는 시트를 사용
+  let best = [], hit = null;
+  for (const name of wb.SheetNames) {   // 이용일·금액 머리글이 있는 시트를 사용 (서울페이처럼 「구매내역」「결제내역」이 같이 있으면 결제·이용 쪽)
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, raw:false, defval:'', dateNF:'yyyy-mm-dd'})
       .map(r => r.map(c => String(c ?? '').trim())).filter(r => r.some(Boolean));
-    if (findHeader(rows) >= 0) return rows;
+    if (findHeader(rows) >= 0) { if (!/구매|충전|선물/.test(name)) return rows; hit = hit || rows; }
     if (!best.length) best = rows;
   }
-  return best;
+  return hit || best;
 }
 const norm = s => String(s).replace(/\s+/g, '');
-const findHeader = rows => rows.findIndex(r => r.some(c => /이용일|거래일|승인일|매출일|사용일|날짜|일자/.test(norm(c))) && r.some(c => /금액/.test(norm(c))));
+const findHeader = rows => rows.findIndex(r => r.some(c => /이용일|거래일|승인일|매출일|사용일|결제일|날짜|일자/.test(norm(c))) && r.some(c => /금액/.test(norm(c))));
 function parseDate(s){
   s = String(s || '').trim();
   let m = s.match(/(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/);
@@ -1757,23 +1757,29 @@ function importCardRows(rows){
   if (hi < 0) return toast('이용일자·이용금액 열을 찾지 못했어요');
   const h = rows[hi].map(norm);
   const col = (...res) => { for (const re of res) { const i = h.findIndex(c => re.test(c)); if (i >= 0) return i; } return -1; };
-  const cD = col(/이용일/, /매출일/, /거래일/, /승인일/, /사용일/, /날짜|일자/),
+  const cD = col(/이용일/, /매출일/, /거래일/, /승인일/, /사용일/, /결제일/, /날짜|일자/),
         cA = col(/이용금액/, /승인금액/, /매출금액/, /거래금액/, /^금액/, /금액/),
         cM = col(/가맹점/, /이용하신곳|이용처|사용처/, /^내용$/),
         cWho = col(/^구분$/), cDet = col(/세부/), cInst = col(/할부개월|할부기간/), cCat = h.findIndex((c,i) => /^(내용|메모|분류)$/.test(c) && i !== cM),
-        cCard = col(/이용카드|카드명|카드종류|사용카드/), cVou = col(/온누리|상품권사용/), cCancel = col(/취소여부/), cCancelAmt = col(/취소금액/), cBuy = col(/매입여부/);
+        cCard = col(/이용카드|카드명|카드종류|사용카드/, /결제채널/),
+        cKind = [col(/결제구분/), col(/거래구분/), col(/거래유형/)].filter(i => i >= 0), cVou = col(/온누리|상품권사용/), cCancel = col(/취소여부/), cCancelAmt = col(/취소금액/), cBuy = col(/매입여부/);
   // 한 파일에 여러 카드가 섞여 있으면(롯데카드 등) 카드 이름으로 결제수단을 나눠요
   const cardKey = raw => String(raw || '').replace(/^\s*(본인|가족)\s*/, '').replace(/\(.*?\)/g, '').replace(/^모바일\s*/, '').trim();
   const pmBase = n => kwNorm(String(n).replace(/\(.*?\)/g, ''));
   const guessPm = k => { const saved = (set().cardMap || {})[k]; if (saved && set().payMethods.some(p => p.name === saved)) return saved;
     const kk = kwNorm(k); const hit = set().payMethods.find(p => pmBase(p.name) && (kk.includes(pmBase(p.name)) || pmBase(p.name).includes(kk))); return hit ? hit.name : '__new:' + k; };
-  const cardMapNow = {}; let canceled = 0;
+  const cardMapNow = {}; let canceled = 0; const cancels = [];
+  // 서울페이 같은 지역화폐 앱 내역(결제채널 열이 있는 파일)은 전부 공용 「생활비」로
+  const payApp = h.some(c => /결제채널/.test(c));
+  const payAppCat = cats('expense').some(c => c.name === '생활비') ? '생활비' : null;
   const whoMap = {'공용':'s'}; set().members.forEach(m => whoMap[m.name] = m.id);
   const items = [], skipped = [];
   for (const r of rows.slice(hi+1)) {
     const date = parseDate(r[cD]);
     const amt = +(r[cA]||'').replace(/[^\d-]/g,'');
     if (!date || !amt) { skipped.push(r); continue; }
+    // 결제구분·거래유형이 「취소」인 행: 그 행은 빼고, 같은 가맹점·금액의 원래 결제도 같이 빼요
+    if (cKind.some(i => /취소|환불/.test(String(r[i])))) { canceled++; cancels.push({detail: cM >= 0 ? r[cM] : '', amt: Math.abs(amt)}); continue; }
     // 취소된 결제는 빼요 (취소여부 Y 또는 취소금액이 있는 행)
     if ((cCancel >= 0 && /^y/i.test(String(r[cCancel]).trim())) || (cCancelAmt >= 0 && +(String(r[cCancelAmt]||'').replace(/[^\d]/g,'')) >= Math.abs(amt)) || amt < 0) { canceled++; continue; }
     let rowPm = pm, ck = '';
@@ -1781,20 +1787,21 @@ function importCardRows(rows){
     const detail = cM >= 0 ? r[cM] : '';
     const catRaw = cCat >= 0 ? (r[cCat]||'').replace(/^\d+월\s*/,'') : '';
     const auto = classify(detail, rowPm.startsWith('__new:') ? '' : rowPm);
-    const category = cats('expense').some(c => c.name === catRaw) ? catRaw : auto.category;
-    const member = whoMap[r[cWho]] || auto.member;
+    const category = cats('expense').some(c => c.name === catRaw) ? catRaw : payApp && payAppCat ? payAppCat : auto.category;
+    const member = whoMap[r[cWho]] || (payApp && payAppCat ? 's' : auto.member);
     // 같은 날짜·금액·가맹점이 이미 있으면 건너뜀 (중복 업로드 방지)
     if (S.data.entries.some(e => e.date===date && +e.amount===amt && e.detail===detail)) { skipped.push(r); continue; }
     const vou = cVou >= 0 ? Math.min(amt, +(String(r[cVou]||'').replace(/[^\d]/g,'')) || 0) : 0;
-    items.push({id:uid(), type:'expense', date, amount:amt, category, detail, member, payMethod:rowPm, _how:auto.how, _card:ck, ...(vou ? {voucher:vou} : {}),
+    items.push({id:uid(), type:'expense', date, amount:amt, category, detail, member, payMethod:rowPm, _how: payApp && payAppCat && category === payAppCat ? 'payapp' : auto.how, _card:ck, ...(vou ? {voucher:vou} : {}),
       memo: cDet >= 0 ? r[cDet] : '', month:'', settled:false, ...((n => n > 1 ? {installments:n} : {})(cInst >= 0 ? +(String(r[cInst]).match(/\d+/) || [0])[0] : 0))});
   }
+  cancels.forEach(c => { const i = items.findIndex(e => e.detail === c.detail && e.amount === c.amt); if (i >= 0) { items.splice(i, 1); canceled++; } });
   if (!items.length) return toast(`새로 가져올 내역이 없어요${canceled ? ` (취소 ${canceled}건 제외)` : ''}`);
   const cardKeys = Object.keys(cardMapNow);
   const pmLabel = v => v.startsWith('__new:') ? v.slice(6) + ' (새로 추가)' : v;
   const memOpts = sel => set().members.map(m => [m.id, m.name]).concat([['s','공용']]).map(([id,n]) => `<option value="${id}" ${id===sel?'selected':''}>${esc(n)}</option>`).join('');
   const catOpts = sel => cats('expense').map(c => `<option ${c.name===sel?'selected':''}>${esc(c.name)}</option>`).join('');
-  const howTag = {rule:'규칙', learn:'지난 기록', file:'파일', base:'기본값'};
+  const howTag = {rule:'규칙', learn:'지난 기록', file:'파일', base:'기본값', payapp:'페이 → 생활비'};
   $('#imp-prev').innerHTML = `<div style="margin-top:12px"><b>${items.length}건</b> 가져오기 (합계 ${won(items.reduce((a,e)=>a+e.amount,0))}원, 중복·빈 행 ${skipped.length}건${canceled ? ` · 취소 ${canceled}건` : ''} 제외)
     ${!cardKeys.length ? `<div class="panel" style="margin:10px 0;padding:12px;border-color:var(--accent)"><b>💳 이 파일은 어느 카드 내역인가요?</b> <span class="muted">파일에 카드 이름이 없어서 한 번만 골라주세요</span>
       <div class="row" style="margin-top:8px"><select id="imp-one">${set().payMethods.map(p => `<option ${p.name===pm?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div></div>` : ''}
